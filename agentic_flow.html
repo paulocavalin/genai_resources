@@ -1,0 +1,2466 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Agentic AI Flow Visualizer</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --bg2: #1a1d27;
+    --bg3: #252836;
+    --border: #2e3248;
+    --text: #e2e8f0;
+    --text-dim: #8892a4;
+    --user: #3b82f6;
+    --user-bg: #1e3a5f;
+    --llm: #a855f7;
+    --llm-bg: #3b1f5e;
+    --tool: #10b981;
+    --tool-bg: #064e3b;
+    --system: #f59e0b;
+    --system-bg: #451a03;
+    --result: #06b6d4;
+    --result-bg: #083344;
+    --radius: 10px;
+    --radius-lg: 16px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* HEADER */
+  header {
+    background: var(--bg2);
+    border-bottom: 1px solid var(--border);
+    padding: 14px 24px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-shrink: 0;
+  }
+  header h1 { font-size: 1.15rem; font-weight: 700; letter-spacing: -0.01em; }
+  header p { font-size: 0.8rem; color: var(--text-dim); }
+  .badge {
+    background: linear-gradient(135deg, var(--llm), var(--user));
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    margin-left: auto;
+  }
+
+  /* LAYOUT */
+  .main { display: flex; flex: 1; overflow: hidden; }
+
+  /* SIDEBAR */
+  .sidebar {
+    width: 220px;
+    flex-shrink: 0;
+    background: var(--bg2);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    padding: 16px 12px;
+    gap: 7px;
+  }
+  .sidebar h2 { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-dim); padding: 0 4px 8px; }
+  .case-card {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 10px 12px;
+    cursor: pointer;
+    transition: all 0.15s;
+    background: var(--bg3);
+  }
+  .case-card:hover { border-color: var(--llm); transform: translateX(2px); }
+  .case-card.active { border-color: var(--llm); background: var(--llm-bg); box-shadow: 0 0 0 1px var(--llm); }
+  .case-card .icon { font-size: 1.2rem; margin-bottom: 4px; }
+  .case-card .title { font-size: 0.83rem; font-weight: 600; margin-bottom: 3px; }
+  .case-card .desc { font-size: 0.7rem; color: var(--text-dim); line-height: 1.4; }
+  .case-card .complexity { margin-top: 7px; display: flex; gap: 3px; }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--border); }
+  .dot.filled { background: var(--llm); }
+
+  /* CENTER: FLOW */
+  .flow-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  .flow-scroll {
+    flex: 1;
+    overflow-y: auto;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+  }
+
+  /* STEP CARD */
+  .step-wrapper {
+    width: 100%;
+    max-width: 660px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    opacity: 0;
+    transform: translateY(20px);
+    transition: opacity 0.4s ease, transform 0.4s ease;
+  }
+  .step-wrapper.visible { opacity: 1; transform: translateY(0); }
+  .step-card {
+    width: 100%;
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border);
+    overflow: hidden;
+    cursor: pointer;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+  .step-card:hover { box-shadow: 0 4px 20px rgba(0,0,0,0.4); }
+
+  .step-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 11px 15px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+  }
+  .step-icon { font-size: 1.05rem; }
+  .step-type { font-size: 0.67rem; text-transform: uppercase; letter-spacing: 0.06em; opacity: 0.7; margin-left: auto; }
+
+  .step-body { padding: 0 15px 13px; }
+  .step-body pre {
+    font-family: 'Courier New', monospace;
+    font-size: 0.78rem;
+    line-height: 1.55;
+    color: var(--text);
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .expand-hint { font-size: 0.67rem; color: var(--text-dim); margin-top: 5px; opacity: 0.6; }
+
+  /* Type colors */
+  .type-system    { --tc: var(--system); --tbg: var(--system-bg); }
+  .type-user      { --tc: var(--user);   --tbg: var(--user-bg); }
+  .type-thinking  { --tc: var(--llm);    --tbg: var(--llm-bg); }
+  .type-tool_call { --tc: var(--tool);   --tbg: var(--tool-bg); }
+  .type-tool_result { --tc: var(--result); --tbg: var(--result-bg); }
+  .type-response  { --tc: var(--llm);    --tbg: var(--llm-bg); }
+  .type-loop      { --tc: #f97316;       --tbg: #431407; }
+
+  .step-card { border-color: var(--tc, var(--border)); }
+  .step-header { background: var(--tbg, var(--bg3)); color: var(--tc, var(--text)); }
+  .step-body { background: var(--bg3); }
+  .step-card.active-card { border-color: var(--tc); box-shadow: 0 0 0 2px var(--tc), 0 4px 24px rgba(0,0,0,0.5); }
+
+  /* ARROW */
+  .arrow {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 4px 0;
+    opacity: 0;
+    transition: opacity 0.3s 0.2s;
+  }
+  .arrow.visible { opacity: 1; }
+  .arrow-line { width: 2px; height: 20px; background: linear-gradient(to bottom, var(--border), var(--llm)); }
+  .arrow-head { width: 0; height: 0; border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 7px solid var(--llm); }
+
+  .loop-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: #431407;
+    border: 1px solid #f97316;
+    color: #f97316;
+    border-radius: 20px;
+    padding: 4px 10px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    margin: 4px auto 6px;
+  }
+
+  /* CONTROLS */
+  .controls {
+    background: var(--bg2);
+    border-top: 1px solid var(--border);
+    padding: 12px 24px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+  }
+  .btn {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 8px;
+    padding: 7px 13px;
+    cursor: pointer;
+    font-size: 0.82rem;
+    font-weight: 500;
+    transition: all 0.15s;
+  }
+  .btn:hover { background: var(--border); }
+  .btn.primary { background: var(--llm); border-color: var(--llm); color: white; }
+  .btn.primary:hover { opacity: 0.85; }
+  .btn:disabled { opacity: 0.35; cursor: not-allowed; }
+  .progress-bar { flex: 1; height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
+  .progress-fill { height: 100%; background: linear-gradient(to right, var(--user), var(--llm)); border-radius: 2px; transition: width 0.4s ease; }
+  .step-counter { font-size: 0.78rem; color: var(--text-dim); white-space: nowrap; }
+
+  /* DETAIL PANEL (right) */
+  .detail-panel {
+    width: 300px;
+    min-width: 160px;
+    max-width: 650px;
+    flex-shrink: 0;
+    background: var(--bg2);
+    border-left: 1px solid var(--border);
+    display: flex;
+    flex-direction: row;
+    overflow: hidden;
+  }
+  .resize-handle {
+    width: 5px;
+    flex-shrink: 0;
+    cursor: col-resize;
+    background: transparent;
+    transition: background 0.15s;
+    position: relative;
+  }
+  .resize-handle:hover, .resize-handle.dragging { background: var(--llm); }
+  .resize-handle::after {
+    content: '';
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: 1px; height: 32px;
+    background: var(--border);
+    border-radius: 1px;
+    transition: background 0.15s;
+  }
+  .resize-handle:hover::after, .resize-handle.dragging::after { background: var(--llm); }
+  .detail-panel-inner { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+  /* TABS */
+  .tab-bar {
+    display: flex;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    background: var(--bg2);
+  }
+  .tab-btn {
+    flex: 1;
+    padding: 10px 8px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-dim);
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: all 0.15s;
+  }
+  .tab-btn:hover { color: var(--text); }
+  .tab-btn.active { color: var(--llm); border-bottom-color: var(--llm); }
+
+  .tab-pane { display: none; flex: 1; overflow-y: auto; }
+  .tab-pane.active { display: flex; flex-direction: column; }
+
+  /* DETAILS TAB */
+  .detail-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 14px;
+    font-size: 0.78rem;
+    line-height: 1.6;
+    color: var(--text-dim);
+  }
+  .detail-content .field { margin-bottom: 12px; }
+  .detail-content .field-label {
+    font-size: 0.67rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-bottom: 4px;
+    color: var(--text-dim);
+  }
+  .detail-content .field-value {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    padding: 7px 9px;
+    font-family: 'Courier New', monospace;
+    font-size: 0.74rem;
+    color: var(--text);
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  /* RAW API TAB */
+  .raw-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .raw-block { display: flex; flex-direction: column; gap: 6px; }
+  .raw-label {
+    font-size: 0.67rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .raw-label.request { color: var(--user); }
+  .raw-label.response { color: var(--tool); }
+  .raw-label.none { color: var(--text-dim); }
+  .raw-label .pill {
+    font-size: 0.6rem;
+    padding: 1px 6px;
+    border-radius: 10px;
+    font-weight: 600;
+  }
+  .raw-label.request .pill { background: var(--user-bg); color: var(--user); border: 1px solid var(--user); }
+  .raw-label.response .pill { background: var(--tool-bg); color: var(--tool); border: 1px solid var(--tool); }
+  .raw-code {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-family: 'Courier New', monospace;
+    font-size: 0.71rem;
+    line-height: 1.55;
+    color: #a5f3fc;
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-x: auto;
+  }
+  .raw-code .json-key { color: #93c5fd; }
+  .raw-code .json-str { color: #86efac; }
+  .raw-code .json-num { color: #fca5a5; }
+  .raw-code .json-bool { color: #fdba74; }
+  .raw-note {
+    font-size: 0.7rem;
+    color: var(--text-dim);
+    font-style: italic;
+    padding: 6px 0 2px;
+  }
+
+  /* LEGEND */
+  .legend {
+    padding: 10px 14px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    flex-shrink: 0;
+  }
+  .legend-title { font-size: 0.63rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-dim); margin-bottom: 2px; }
+  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 0.7rem; color: var(--text-dim); }
+  .legend-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+
+  /* EMPTY STATE */
+  .empty-detail {
+    text-align: center;
+    padding: 40px 20px;
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    opacity: 0.6;
+  }
+  .empty-detail .em-icon { font-size: 2rem; margin-bottom: 8px; }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>🤖 Agentic AI Flow Visualizer</h1>
+    <p>Explore how LLM agents reason, call tools, and complete complex tasks</p>
+  </div>
+  <span class="badge">Paulo Cavalin</span>
+</header>
+
+<div class="main">
+
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <h2>Use Cases</h2>
+  </aside>
+
+  <!-- CENTER: animated flow -->
+  <div class="flow-area">
+    <div class="flow-scroll" id="flowScroll">
+      <div class="step-wrapper visible" style="max-width:660px;opacity:1;transform:none;">
+        <div style="text-align:center;padding:60px 20px;color:var(--text-dim);">
+          <div style="font-size:3rem;margin-bottom:12px;">👈</div>
+          <div style="font-size:1rem;font-weight:600;color:var(--text);">Select a use case to begin</div>
+          <div style="font-size:0.82rem;margin-top:8px;">Choose a scenario from the left panel, then press Play to watch the agent work step by step.</div>
+        </div>
+      </div>
+    </div>
+    <div class="controls">
+      <button class="btn" id="btnReset" onclick="resetFlow()" disabled>↺ Reset</button>
+      <button class="btn" id="btnPrev" onclick="stepBack()" disabled>◀ Prev</button>
+      <button class="btn primary" id="btnPlay" onclick="togglePlay()" disabled>▶ Play</button>
+      <button class="btn" id="btnNext" onclick="stepForward()" disabled>Next ▶</button>
+      <div class="progress-bar"><div class="progress-fill" id="progressFill" style="width:0%"></div></div>
+      <span class="step-counter" id="stepCounter">— / —</span>
+    </div>
+  </div>
+
+  <!-- RIGHT: detail panel -->
+  <div class="detail-panel" id="detailPanel">
+    <div class="resize-handle" id="resizeHandle"></div>
+    <div class="detail-panel-inner">
+
+      <!-- Tabs -->
+      <div class="tab-bar">
+        <button class="tab-btn active" id="tabBtnDetails" onclick="setTab('details')">Details</button>
+        <button class="tab-btn" id="tabBtnRaw" onclick="setTab('raw')">Raw API</button>
+      </div>
+
+      <!-- Details pane -->
+      <div class="tab-pane active" id="paneDetails">
+        <div class="detail-content" id="detailContent">
+          <div class="empty-detail"><div class="em-icon">🔍</div><div>Click any step card to inspect its content</div></div>
+        </div>
+      </div>
+
+      <!-- Raw API pane -->
+      <div class="tab-pane" id="paneRaw">
+        <div class="raw-content" id="rawContent">
+          <div class="empty-detail"><div class="em-icon">📡</div><div>Click any step to see raw API payloads</div></div>
+        </div>
+      </div>
+
+      <!-- Legend -->
+      <div class="legend">
+        <div class="legend-title">Legend</div>
+        <div class="legend-item"><div class="legend-dot" style="background:var(--system)"></div> System Prompt</div>
+        <div class="legend-item"><div class="legend-dot" style="background:var(--user)"></div> User Message</div>
+        <div class="legend-item"><div class="legend-dot" style="background:var(--llm)"></div> LLM Thinking / Response</div>
+        <div class="legend-item"><div class="legend-dot" style="background:var(--tool)"></div> Tool Call</div>
+        <div class="legend-item"><div class="legend-dot" style="background:var(--result)"></div> Tool Result</div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+// ─────────────────────────────────────────────────────────────────────────────
+// USE CASE DATA  (synthetic / static)
+// Each step has: type, label, icon, summary, content, detail, raw
+//   raw.request  = JSON string of the payload sent TO the Claude API
+//   raw.response = JSON string of the payload received FROM the Claude API
+//   raw.note     = optional explanatory note
+// ─────────────────────────────────────────────────────────────────────────────
+const USE_CASES = [
+
+  // ── 1. WEATHER ASSISTANT ─────────────────────────────────────────────────
+  {
+    id: 'weather', icon: '🌤️', title: 'Weather Assistant',
+    desc: 'Simple single-tool lookup.',
+    complexity: 1,
+    steps: [
+      {
+        type: 'system', label: 'System Prompt', icon: '⚙️',
+        summary: "Define the agent's role and available tools",
+        content: `You are a helpful weather assistant. You have access to:
+
+  get_weather(city: string, units: "metric"|"imperial") → WeatherData
+
+Use it whenever the user asks about weather. Present temperatures clearly and suggest appropriate clothing or activities.`,
+        detail: { 'Role': 'Weather assistant', 'Tools': 'get_weather(city, units)', 'Model': 'claude-opus-4-6', 'Max tokens': '4096' },
+        raw: {
+          request: `{
+  "model": "claude-opus-4-6",
+  "max_tokens": 4096,
+  "system": "You are a helpful weather assistant...",
+  "tools": [
+    {
+      "name": "get_weather",
+      "description": "Get current weather for a city",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "city":  { "type": "string" },
+          "units": { "type": "string", "enum": ["metric","imperial"] }
+        },
+        "required": ["city","units"]
+      }
+    }
+  ],
+  "messages": []
+}`,
+          note: 'No API call yet — this shows the initial request structure that will be used when the first user message arrives.'
+        }
+      },
+      {
+        type: 'user', label: 'User Message', icon: '👤',
+        summary: "What's the weather like in São Paulo right now?",
+        content: `What's the weather like in São Paulo right now?`,
+        detail: { 'Role': 'user', 'Turn': '1 of 2', 'Input tokens': '~28' },
+        raw: {
+          request: `{
+  "model": "claude-opus-4-6",
+  "max_tokens": 4096,
+  "system": "You are a helpful weather assistant...",
+  "tools": [ { "name": "get_weather", ... } ],
+  "messages": [
+    {
+      "role": "user",
+      "content": "What's the weather like in São Paulo right now?"
+    }
+  ]
+}`,
+          note: 'The user message is appended to the messages array. The full request is now sent to the API.'
+        }
+      },
+      {
+        type: 'thinking', label: 'LLM Reasoning', icon: '🧠',
+        summary: 'Model decides it needs to call get_weather to answer.',
+        content: `<thinking>
+The user is asking about current weather in São Paulo.
+I have the get_weather tool available.
+I should call it with city="São Paulo" and units="metric"
+since the user didn't specify a unit preference.
+</thinking>`,
+        detail: { 'Decision': 'Call get_weather', 'Reasoning tokens': '~45', 'Note': 'Thinking tokens are billed but hidden from the user.' },
+        raw: {
+          response: `{
+  "id": "msg_01XHrA2k8nPqW",
+  "type": "message",
+  "role": "assistant",
+  "content": [
+    {
+      "type": "thinking",
+      "thinking": "The user is asking about current weather in São Paulo. I have the get_weather tool available. I should call it with city=\\"São Paulo\\" and units=\\"metric\\"."
+    },
+    {
+      "type": "tool_use",
+      "id": "tool_call_abc123",
+      "name": "get_weather",
+      "input": {
+        "city": "São Paulo",
+        "units": "metric"
+      }
+    }
+  ],
+  "model": "claude-opus-4-6",
+  "stop_reason": "tool_use",
+  "usage": {
+    "input_tokens": 73,
+    "output_tokens": 89,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0
+  }
+}`,
+          note: 'stop_reason is "tool_use" — the model is pausing to let the orchestrator execute the tool.'
+        }
+      },
+      {
+        type: 'tool_call', label: 'Tool Call', icon: '🔧',
+        summary: 'get_weather("São Paulo", "metric")',
+        content: `Tool: get_weather
+Arguments: {
+  "city": "São Paulo",
+  "units": "metric"
+}`,
+        detail: { 'Tool': 'get_weather', 'Call ID': 'tool_call_abc123', 'Latency': '~340 ms' },
+        raw: {
+          response: `// Extracted from the assistant message above:
+{
+  "type": "tool_use",
+  "id": "tool_call_abc123",
+  "name": "get_weather",
+  "input": {
+    "city": "São Paulo",
+    "units": "metric"
+  }
+}`,
+          note: 'The orchestrator parses this tool_use block and invokes the actual get_weather function with the given arguments.'
+        }
+      },
+      {
+        type: 'tool_result', label: 'Tool Result', icon: '📦',
+        summary: '26°C, partly cloudy, humidity 72%',
+        content: `{
+  "city": "São Paulo",
+  "temperature": 26,
+  "feels_like": 28,
+  "humidity": 72,
+  "condition": "Partly cloudy",
+  "wind_kph": 14,
+  "uv_index": 6
+}`,
+        detail: { 'Source': 'WeatherAPI (simulated)', 'Call ID matched': 'tool_call_abc123', 'Data freshness': '10 min cache' },
+        raw: {
+          request: `{
+  "model": "claude-opus-4-6",
+  "max_tokens": 4096,
+  "system": "You are a helpful weather assistant...",
+  "tools": [ { "name": "get_weather", ... } ],
+  "messages": [
+    {
+      "role": "user",
+      "content": "What's the weather like in São Paulo right now?"
+    },
+    {
+      "role": "assistant",
+      "content": [
+        { "type": "thinking", "thinking": "..." },
+        { "type": "tool_use", "id": "tool_call_abc123",
+          "name": "get_weather",
+          "input": { "city": "São Paulo", "units": "metric" } }
+      ]
+    },
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "tool_result",
+          "tool_use_id": "tool_call_abc123",
+          "content": "{\\"city\\":\\"São Paulo\\",\\"temperature\\":26,\\"feels_like\\":28,\\"humidity\\":72,\\"condition\\":\\"Partly cloudy\\",\\"wind_kph\\":14,\\"uv_index\\":6}"
+        }
+      ]
+    }
+  ]
+}`,
+          note: 'Tool results are returned as a user-role message containing tool_result content blocks. The full conversation history is re-sent on every API call.'
+        }
+      },
+      {
+        type: 'response', label: 'LLM Response', icon: '💬',
+        summary: 'Friendly summary with clothing suggestion',
+        content: `Right now in São Paulo it's **26°C** (feels like 28°C) with partly cloudy skies and 72% humidity.
+
+There's a light breeze at 14 km/h and the UV index is at 6 — moderate to high, so sunscreen is a good idea if you're heading outside.
+
+A light breathable outfit would be perfect! ☀️`,
+        detail: { 'Role': 'assistant', 'Used tool result': 'Yes', 'Output tokens': '~72', 'Total cost': '~$0.0003' },
+        raw: {
+          response: `{
+  "id": "msg_02YKbB3l9pRx",
+  "type": "message",
+  "role": "assistant",
+  "content": [
+    {
+      "type": "text",
+      "text": "Right now in São Paulo it's **26°C** (feels like 28°C) with partly cloudy skies and 72% humidity.\\n\\nThere's a light breeze at 14 km/h and the UV index is at 6 — moderate to high, so sunscreen is a good idea if you're heading outside.\\n\\nA light breathable outfit would be perfect! ☀️"
+    }
+  ],
+  "model": "claude-opus-4-6",
+  "stop_reason": "end_turn",
+  "usage": {
+    "input_tokens": 178,
+    "output_tokens": 72
+  }
+}`,
+          note: 'stop_reason is "end_turn" — the model finished the response and no further tool calls are needed.'
+        }
+      }
+    ]
+  },
+
+  // ── 2. RESEARCH AGENT ────────────────────────────────────────────────────
+  {
+    id: 'research', icon: '🔬', title: 'Research Agent',
+    desc: 'Multi-step web search + synthesis with a planning loop.',
+    complexity: 3,
+    steps: [
+      {
+        type: 'system', label: 'System Prompt', icon: '⚙️',
+        summary: 'Research agent with web search and scraping tools',
+        content: `You are an expert research assistant. You can use:
+
+  web_search(query: string, max_results: int) → SearchResults
+  scrape_page(url: string) → PageContent
+  summarize(text: string) → Summary
+
+Break complex questions into sub-queries. Cite your sources. Synthesize findings into a concise report.`,
+        detail: { 'Tools': 'web_search, scrape_page, summarize', 'Strategy': 'Decompose → Search → Synthesize', 'Max iterations': '10' },
+        raw: {
+          request: `{
+  "model": "claude-opus-4-6",
+  "max_tokens": 8192,
+  "system": "You are an expert research assistant...",
+  "tools": [
+    { "name": "web_search",  "input_schema": { "properties": { "query": {...}, "max_results": {...} } } },
+    { "name": "scrape_page", "input_schema": { "properties": { "url": {...} } } },
+    { "name": "summarize",   "input_schema": { "properties": { "text": {...} } } }
+  ],
+  "messages": []
+}`,
+          note: 'Three tools registered. The model will decide which to call and in what order.'
+        }
+      },
+      {
+        type: 'user', label: 'User Message', icon: '👤',
+        summary: 'What are the key differences between RAG and fine-tuning for LLMs?',
+        content: `What are the key differences between RAG and fine-tuning for LLMs, and when should I use each approach?`,
+        detail: { 'Role': 'user', 'Input tokens': '~30' },
+        raw: {
+          request: `{
+  "model": "claude-opus-4-6",
+  "max_tokens": 8192,
+  "system": "You are an expert research assistant...",
+  "tools": [ ... ],
+  "messages": [
+    {
+      "role": "user",
+      "content": "What are the key differences between RAG and fine-tuning for LLMs, and when should I use each approach?"
+    }
+  ]
+}`
+        }
+      },
+      {
+        type: 'thinking', label: 'LLM Planning', icon: '🧠',
+        summary: 'Agent plans 2 search queries to cover the topic thoroughly',
+        content: `<thinking>
+This is a multi-faceted question. I should:
+1. Search for RAG overview and use cases
+2. Search for a direct RAG vs fine-tuning comparison
+
+I'll run these searches sequentially and synthesize.
+</thinking>`,
+        detail: { 'Plan': '2 sub-queries', 'Reasoning tokens': '~110' },
+        raw: {
+          response: `{
+  "id": "msg_03ZLcC4m0qSy",
+  "type": "message",
+  "role": "assistant",
+  "content": [
+    { "type": "thinking", "thinking": "This is a multi-faceted question..." },
+    {
+      "type": "tool_use",
+      "id": "tool_call_s001",
+      "name": "web_search",
+      "input": {
+        "query": "RAG retrieval augmented generation LLM when to use",
+        "max_results": 3
+      }
+    }
+  ],
+  "stop_reason": "tool_use",
+  "usage": { "input_tokens": 95, "output_tokens": 130 }
+}`
+        }
+      },
+      {
+        type: 'tool_call', label: 'Tool Call #1', icon: '🔧',
+        summary: 'web_search("RAG retrieval augmented generation when to use")',
+        content: `Tool: web_search
+Arguments: {
+  "query": "RAG retrieval augmented generation LLM when to use",
+  "max_results": 3
+}`,
+        detail: { 'Tool': 'web_search', 'Call ID': 'tool_call_s001' },
+        raw: {
+          response: `// tool_use block from assistant message:
+{
+  "type": "tool_use",
+  "id": "tool_call_s001",
+  "name": "web_search",
+  "input": {
+    "query": "RAG retrieval augmented generation LLM when to use",
+    "max_results": 3
+  }
+}`
+        }
+      },
+      {
+        type: 'tool_result', label: 'Tool Result #1', icon: '📦',
+        summary: '3 search results about RAG returned',
+        content: `[
+  { "title": "What is RAG? — Anthropic Docs", "snippet": "RAG combines retrieval systems with LLMs to ground responses in current data..." },
+  { "title": "RAG vs Fine-tuning: A Practical Guide", "snippet": "RAG is ideal when your data changes frequently..." },
+  { "title": "When to use RAG — LangChain Blog", "snippet": "RAG shines for knowledge-intensive tasks with external documents..." }
+]`,
+        detail: { 'Results': '3', 'Latency': '~520ms' },
+        raw: {
+          request: `// New API call with tool result appended:
+{
+  "messages": [
+    { "role": "user", "content": "What are the key differences..." },
+    { "role": "assistant", "content": [ { "type": "thinking", ... }, { "type": "tool_use", "id": "tool_call_s001", ... } ] },
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "tool_result",
+          "tool_use_id": "tool_call_s001",
+          "content": "[{\\"title\\":\\"What is RAG?\\", \\"snippet\\":\\"RAG combines retrieval systems...\\"}]"
+        }
+      ]
+    }
+  ]
+}`
+        }
+      },
+      {
+        type: 'tool_call', label: 'Tool Call #2', icon: '🔧',
+        summary: 'web_search("LLM fine-tuning vs RAG comparison")',
+        content: `Tool: web_search
+Arguments: {
+  "query": "LLM fine-tuning vs RAG comparison 2024",
+  "max_results": 3
+}`,
+        detail: { 'Tool': 'web_search', 'Call ID': 'tool_call_s002' },
+        raw: {
+          response: `{
+  "role": "assistant",
+  "content": [
+    {
+      "type": "tool_use",
+      "id": "tool_call_s002",
+      "name": "web_search",
+      "input": { "query": "LLM fine-tuning vs RAG comparison 2024", "max_results": 3 }
+    }
+  ],
+  "stop_reason": "tool_use",
+  "usage": { "input_tokens": 312, "output_tokens": 55 }
+}`
+        }
+      },
+      {
+        type: 'tool_result', label: 'Tool Result #2', icon: '📦',
+        summary: '3 comparison results returned',
+        content: `[
+  { "title": "Fine-tuning vs RAG: 2024 Breakdown", "snippet": "Fine-tuning modifies model weights, RAG adds external context at inference..." },
+  { "title": "Choosing between RAG and fine-tuning", "snippet": "Fine-tuning is best for teaching new skills or consistent output formats..." },
+  { "title": "RAG + Fine-tuning hybrid approaches", "snippet": "Combining both achieves state-of-the-art results on knowledge tasks..." }
+]`,
+        detail: { 'Results': '3', 'Latency': '~480ms' },
+        raw: {
+          request: `// messages array now has 5 turns (user, assistant+tool, user+result, assistant+tool, user+result):
+{
+  "messages": [
+    ...,
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "tool_result",
+          "tool_use_id": "tool_call_s002",
+          "content": "[{\\"title\\":\\"Fine-tuning vs RAG: 2024\\", ...}]"
+        }
+      ]
+    }
+  ]
+}`
+        }
+      },
+      {
+        type: 'loop', label: 'Agent Loop', icon: '🔄',
+        summary: 'Agent decides it has enough data — exits the search loop',
+        content: `Agent evaluation:
+✅ RAG overview — covered
+✅ Fine-tuning overview — covered
+✅ Comparative analysis — covered
+
+Decision: Sufficient data gathered. Proceed to synthesis.`,
+        detail: { 'Iterations': '2 of 10 max', 'Stop reason': 'Sufficient data', 'Next': 'Synthesize' },
+        raw: {
+          note: 'No API call at this step. The orchestrator code checks a stop condition (max iterations reached, or model returned end_turn without a tool call). Here the model itself decides to stop searching.'
+        }
+      },
+      {
+        type: 'response', label: 'LLM Response', icon: '💬',
+        summary: 'Comprehensive comparison with decision framework',
+        content: `**RAG** retrieves documents at inference time; **Fine-tuning** updates model weights.
+
+Use **RAG** when: data changes often, you need citations, or your knowledge base is large.
+Use **Fine-tuning** when: you need a consistent output style, domain vocabulary, or a specific skill baked in.
+
+💡 Many production systems combine both.`,
+        detail: { 'Sources synthesized': '6', 'Output tokens': '~210', 'Total tool calls': '2' },
+        raw: {
+          response: `{
+  "id": "msg_07PLhH8r3vWb",
+  "type": "message",
+  "role": "assistant",
+  "content": [
+    {
+      "type": "text",
+      "text": "**RAG** retrieves documents at inference time; **Fine-tuning** updates model weights.\\n\\nUse **RAG** when: data changes often..."
+    }
+  ],
+  "stop_reason": "end_turn",
+  "usage": {
+    "input_tokens": 612,
+    "output_tokens": 210
+  }
+}`
+        }
+      }
+    ]
+  },
+
+  // ── 3. CODE DEBUGGER ─────────────────────────────────────────────────────
+  {
+    id: 'code', icon: '💻', title: 'Code Debugger',
+    desc: 'Writes code, runs it, reads errors, self-corrects.',
+    complexity: 2,
+    steps: [
+      {
+        type: 'system', label: 'System Prompt', icon: '⚙️',
+        summary: 'Coding agent with code execution and file system access',
+        content: `You are an expert Python engineer. Available tools:
+
+  run_code(code: string, language: "python") → ExecutionResult
+  read_file(path: string) → FileContent
+  write_file(path: string, content: string) → WriteResult
+
+Write clean code. When execution fails, read the error carefully and fix it. Always test before returning.`,
+        detail: { 'Tools': 'run_code, read_file, write_file', 'Max retries': '3' },
+        raw: {
+          request: `{
+  "model": "claude-opus-4-6",
+  "max_tokens": 4096,
+  "system": "You are an expert Python engineer...",
+  "tools": [
+    { "name": "run_code",   "input_schema": { "properties": { "code": {...}, "language": {...} } } },
+    { "name": "read_file",  "input_schema": { "properties": { "path": {...} } } },
+    { "name": "write_file", "input_schema": { "properties": { "path": {...}, "content": {...} } } }
+  ],
+  "messages": []
+}`
+        }
+      },
+      {
+        type: 'user', label: 'User Message', icon: '👤',
+        summary: 'Write a palindrome detector function and test it.',
+        content: `Write a Python function that checks if a string is a palindrome (ignoring spaces and capitalization), then test it with a few examples.`,
+        detail: { 'Role': 'user' },
+        raw: {
+          request: `{
+  "messages": [
+    {
+      "role": "user",
+      "content": "Write a Python function that checks if a string is a palindrome..."
+    }
+  ]
+}`
+        }
+      },
+      {
+        type: 'thinking', label: 'LLM Reasoning', icon: '🧠',
+        summary: 'Agent writes the function and test cases, then plans to run them',
+        content: `<thinking>
+I need to:
+1. Write is_palindrome() — strip spaces, lowercase, compare to reverse
+2. Test with: "racecar", "A man a plan a canal Panama", "hello"
+3. Run the code and verify the output before returning
+</thinking>`,
+        detail: { 'Plan': 'Write → Execute → Verify', 'Reasoning tokens': '~60' },
+        raw: {
+          response: `{
+  "id": "msg_04AMdD5n1rTz",
+  "role": "assistant",
+  "content": [
+    { "type": "thinking", "thinking": "I need to: 1. Write is_palindrome()..." },
+    {
+      "type": "tool_use",
+      "id": "tool_call_c001",
+      "name": "run_code",
+      "input": {
+        "language": "python",
+        "code": "def is_palindrome(s):\\n    cleaned = s.replace(' ','').lower()\\n    return cleaned == cleaned[::-1]\\n\\nfor text, expected in [('racecar',True),('A man a plan a canal Panama',True),('hello',False)]:\\n    result = is_palindrome(text)\\n    print(f'{\\\"✅\\\" if result==expected else \\\"❌\\\"} {text!r} → {result}')"
+      }
+    }
+  ],
+  "stop_reason": "tool_use",
+  "usage": { "input_tokens": 112, "output_tokens": 145 }
+}`
+        }
+      },
+      {
+        type: 'tool_call', label: 'Tool Call — Run Code', icon: '🔧',
+        summary: 'run_code(palindrome function + tests)',
+        content: `Tool: run_code
+Arguments: {
+  "language": "python",
+  "code": "def is_palindrome(s):\n    cleaned = s.replace(' ','').lower()\n    return cleaned == cleaned[::-1]\n\nfor text, expected in [('racecar',True),('A man...',True),('hello',False)]:\n    result = is_palindrome(text)\n    print(f'✅/❌ {text!r} → {result}')"
+}`,
+        detail: { 'Tool': 'run_code', 'Call ID': 'tool_call_c001', 'Sandbox': 'Isolated container', 'Timeout': '10s' },
+        raw: {
+          response: `// tool_use block from assistant message:
+{
+  "type": "tool_use",
+  "id": "tool_call_c001",
+  "name": "run_code",
+  "input": {
+    "language": "python",
+    "code": "def is_palindrome(s):\\n    cleaned = s.replace(' ','').lower()\\n    return cleaned == cleaned[::-1]\\n\\n..."
+  }
+}`
+        }
+      },
+      {
+        type: 'tool_result', label: 'Execution Output', icon: '📦',
+        summary: 'All 3 tests passed ✅',
+        content: `{
+  "exit_code": 0,
+  "stdout": "✅ 'racecar' → True\n✅ 'A man a plan a canal Panama' → True\n✅ 'hello' → False",
+  "stderr": "",
+  "execution_time_ms": 42
+}`,
+        detail: { 'Exit code': '0 (success)', 'Tests passed': '3/3', 'Retry needed': 'No' },
+        raw: {
+          request: `{
+  "messages": [
+    { "role": "user", "content": "Write a Python function..." },
+    { "role": "assistant", "content": [ { "type": "thinking", ... }, { "type": "tool_use", "id": "tool_call_c001", ... } ] },
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "tool_result",
+          "tool_use_id": "tool_call_c001",
+          "content": "{\\"exit_code\\":0,\\"stdout\\":\\"✅ 'racecar' → True\\\\n✅ 'A man...' → True\\\\n✅ 'hello' → False\\",\\"stderr\\":\\"\\"}"
+        }
+      ]
+    }
+  ]
+}`
+        }
+      },
+      {
+        type: 'response', label: 'LLM Response', icon: '💬',
+        summary: 'Returns the function with explanation and verified test results',
+        content: `Here's the palindrome checker — all tests passed! ✅
+
+\`\`\`python
+def is_palindrome(s: str) -> bool:
+    cleaned = s.replace(' ', '').lower()
+    return cleaned == cleaned[::-1]
+\`\`\`
+
+How it works: strips spaces → lowercases → compares to its own reverse.`,
+        detail: { 'Code tested live': 'Yes', 'Output tokens': '~130', 'Self-correction': 'Not needed' },
+        raw: {
+          response: `{
+  "id": "msg_05BNeE6o2sTa",
+  "role": "assistant",
+  "content": [
+    {
+      "type": "text",
+      "text": "Here's the palindrome checker — all tests passed! ✅\\n\\n\`\`\`python\\ndef is_palindrome(s: str) -> bool:..."
+    }
+  ],
+  "stop_reason": "end_turn",
+  "usage": { "input_tokens": 289, "output_tokens": 130 }
+}`
+        }
+      }
+    ]
+  },
+
+  // ── 4. CUSTOMER SUPPORT ──────────────────────────────────────────────────
+  {
+    id: 'support', icon: '🎧', title: 'Customer Support',
+    desc: 'Multi-tool: CRM lookup, policy check, refund.',
+    complexity: 3,
+    steps: [
+      {
+        type: 'system', label: 'System Prompt', icon: '⚙️',
+        summary: 'Support agent with CRM, policy, and escalation tools',
+        content: `You are a customer support agent for ShopEasy. Available tools:
+
+  lookup_order(order_id: string) → OrderDetails
+  check_policy(topic: string) → PolicyText
+  issue_refund(order_id: string, amount: float, reason: string) → RefundConfirmation
+  escalate_to_human(reason: string, urgency: "low"|"medium"|"high") → EscalationTicket
+
+Be empathetic. Verify the order before acting. Refunds ≤ $100 are auto-approved.`,
+        detail: { 'Tools': 'lookup_order, check_policy, issue_refund, escalate_to_human', 'Refund limit': '$100 auto' },
+        raw: {
+          request: `{
+  "model": "claude-opus-4-6",
+  "max_tokens": 4096,
+  "system": "You are a customer support agent for ShopEasy...",
+  "tools": [
+    { "name": "lookup_order" },
+    { "name": "check_policy" },
+    { "name": "issue_refund" },
+    { "name": "escalate_to_human" }
+  ],
+  "messages": []
+}`
+        }
+      },
+      {
+        type: 'user', label: 'User Message', icon: '👤',
+        summary: 'Order #SE-88421 arrived broken. I want a refund.',
+        content: `Hi, my order #SE-88421 arrived with a cracked screen protector. I'm really frustrated — this is the second time this has happened. I want a full refund.`,
+        detail: { 'Sentiment': 'Frustrated', 'Intent': 'Refund request' },
+        raw: {
+          request: `{
+  "messages": [
+    {
+      "role": "user",
+      "content": "Hi, my order #SE-88421 arrived with a cracked screen protector. I'm really frustrated — this is the second time this has happened. I want a full refund."
+    }
+  ]
+}`
+        }
+      },
+      {
+        type: 'thinking', label: 'LLM Reasoning', icon: '🧠',
+        summary: 'Agent plans: verify order → check policy → decide on refund',
+        content: `<thinking>
+Customer is frustrated (second issue). Plan:
+1. lookup_order("SE-88421") to verify and get the amount
+2. check_policy("damaged item refund") to confirm eligibility
+3. If amount ≤ $100 → issue_refund automatically
+4. If > $100 → escalate_to_human
+</thinking>`,
+        detail: { 'Plan': '3-step resolution', 'Escalation risk': 'Low (likely small item)' },
+        raw: {
+          response: `{
+  "role": "assistant",
+  "content": [
+    { "type": "thinking", "thinking": "Customer is frustrated (second issue)..." },
+    {
+      "type": "tool_use",
+      "id": "tool_call_p001",
+      "name": "lookup_order",
+      "input": { "order_id": "SE-88421" }
+    }
+  ],
+  "stop_reason": "tool_use",
+  "usage": { "input_tokens": 148, "output_tokens": 112 }
+}`
+        }
+      },
+      {
+        type: 'tool_call', label: 'Tool Call #1 — Lookup Order', icon: '🔧',
+        summary: 'lookup_order("SE-88421")',
+        content: `Tool: lookup_order
+Arguments: { "order_id": "SE-88421" }`,
+        detail: { 'Tool': 'lookup_order', 'Call ID': 'tool_call_p001' },
+        raw: {
+          response: `{
+  "type": "tool_use",
+  "id": "tool_call_p001",
+  "name": "lookup_order",
+  "input": { "order_id": "SE-88421" }
+}`
+        }
+      },
+      {
+        type: 'tool_result', label: 'Tool Result #1 — Order Found', icon: '📦',
+        summary: '$24.99 screen protector, delivered 2 days ago',
+        content: `{
+  "order_id": "SE-88421",
+  "customer": "Maria Silva",
+  "item": "TemperedShield Pro Screen Protector",
+  "amount": 24.99,
+  "status": "Delivered",
+  "delivery_date": "2026-03-22",
+  "previous_refund_count": 1
+}`,
+        detail: { 'Amount': '$24.99', 'Previous refunds': '1 (flagged)' },
+        raw: {
+          request: `{
+  "messages": [
+    ...,
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "tool_result",
+          "tool_use_id": "tool_call_p001",
+          "content": "{\\"order_id\\":\\"SE-88421\\",\\"amount\\":24.99,\\"status\\":\\"Delivered\\",\\"previous_refund_count\\":1}"
+        }
+      ]
+    }
+  ]
+}`
+        }
+      },
+      {
+        type: 'tool_call', label: 'Tool Call #2 — Check Policy', icon: '🔧',
+        summary: 'check_policy("damaged item refund")',
+        content: `Tool: check_policy
+Arguments: { "topic": "damaged item refund" }`,
+        detail: { 'Tool': 'check_policy', 'Call ID': 'tool_call_p002' },
+        raw: {
+          response: `{
+  "type": "tool_use",
+  "id": "tool_call_p002",
+  "name": "check_policy",
+  "input": { "topic": "damaged item refund" }
+}`
+        }
+      },
+      {
+        type: 'tool_result', label: 'Tool Result #2 — Policy', icon: '📦',
+        summary: 'Full refund allowed within 30 days; repeat claim → courtesy discount',
+        content: `{
+  "policy": "Damaged items eligible for full refund within 30 days. Agents may approve up to $100. For repeat claims (2+), add a 10% courtesy discount on next purchase.",
+  "effective_date": "2025-01-01"
+}`,
+        detail: { 'Refund window': '30 days', 'Repeat claim action': 'Add 10% courtesy discount' },
+        raw: {
+          request: `{
+  "messages": [
+    ...,
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "tool_result",
+          "tool_use_id": "tool_call_p002",
+          "content": "{\\"policy\\":\\"Damaged items eligible for full refund within 30 days...\\",\\"effective_date\\":\\"2025-01-01\\"}"
+        }
+      ]
+    }
+  ]
+}`
+        }
+      },
+      {
+        type: 'thinking', label: 'LLM Reasoning', icon: '🧠',
+        summary: '$24.99 < $100 limit → auto-approve + add courtesy discount',
+        content: `<thinking>
+$24.99 < $100 auto-approve limit ✅
+Delivered 2 days ago → within 30-day window ✅
+Repeat claim → add courtesy discount per policy
+
+Action: issue_refund("SE-88421", 24.99, "cracked on arrival")
+Then mention SORRY10 discount in response.
+</thinking>`,
+        detail: { 'Decision': 'Auto-approve', 'Escalation': 'No' },
+        raw: {
+          response: `{
+  "role": "assistant",
+  "content": [
+    { "type": "thinking", "thinking": "$24.99 < $100 auto-approve limit..." },
+    {
+      "type": "tool_use",
+      "id": "tool_call_p003",
+      "name": "issue_refund",
+      "input": {
+        "order_id": "SE-88421",
+        "amount": 24.99,
+        "reason": "Item arrived damaged — cracked screen protector"
+      }
+    }
+  ],
+  "stop_reason": "tool_use",
+  "usage": { "input_tokens": 489, "output_tokens": 98 }
+}`
+        }
+      },
+      {
+        type: 'tool_call', label: 'Tool Call #3 — Issue Refund', icon: '🔧',
+        summary: 'issue_refund("SE-88421", 24.99, "Item arrived damaged")',
+        content: `Tool: issue_refund
+Arguments: {
+  "order_id": "SE-88421",
+  "amount": 24.99,
+  "reason": "Item arrived damaged — cracked screen protector"
+}`,
+        detail: { 'Tool': 'issue_refund', 'Call ID': 'tool_call_p003', 'Auth required': 'No (< $100)' },
+        raw: {
+          response: `{
+  "type": "tool_use",
+  "id": "tool_call_p003",
+  "name": "issue_refund",
+  "input": {
+    "order_id": "SE-88421",
+    "amount": 24.99,
+    "reason": "Item arrived damaged — cracked screen protector"
+  }
+}`
+        }
+      },
+      {
+        type: 'tool_result', label: 'Tool Result #3 — Refund Confirmed', icon: '📦',
+        summary: 'Refund #REF-20260324-7742, ETA 3-5 business days',
+        content: `{
+  "status": "approved",
+  "refund_id": "REF-20260324-7742",
+  "amount": 24.99,
+  "method": "Original payment method",
+  "estimated_arrival": "3-5 business days"
+}`,
+        detail: { 'Refund ID': 'REF-20260324-7742', 'ETA': '3-5 business days' },
+        raw: {
+          request: `{
+  "messages": [
+    ...,
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "tool_result",
+          "tool_use_id": "tool_call_p003",
+          "content": "{\\"status\\":\\"approved\\",\\"refund_id\\":\\"REF-20260324-7742\\",\\"amount\\":24.99,\\"estimated_arrival\\":\\"3-5 business days\\"}"
+        }
+      ]
+    }
+  ]
+}`
+        }
+      },
+      {
+        type: 'response', label: 'LLM Response', icon: '💬',
+        summary: 'Empathetic message with refund ID and courtesy discount',
+        content: `Hi Maria, I'm really sorry this happened again — that's completely unacceptable.
+
+I've approved a **full refund of $24.99** (Refund ID: REF-20260324-7742). You should see it back within 3–5 business days.
+
+As an apology, here's a **10% discount code** for your next order: **SORRY10**
+
+Is there anything else I can help with?`,
+        detail: { 'Tone': 'Empathetic', 'Refund issued': '$24.99 ✅', 'Courtesy discount': 'SORRY10', 'Total tool calls': '3' },
+        raw: {
+          response: `{
+  "id": "msg_11VXmM2w7zGf",
+  "role": "assistant",
+  "content": [
+    {
+      "type": "text",
+      "text": "Hi Maria, I'm really sorry this happened again..."
+    }
+  ],
+  "stop_reason": "end_turn",
+  "usage": {
+    "input_tokens": 621,
+    "output_tokens": 105
+  }
+}`
+        }
+      }
+    ]
+  },
+
+  // ── 5. EMAIL DRAFTER ─────────────────────────────────────────────────────
+  {
+    id: 'email', icon: '📧', title: 'Email Drafter',
+    desc: 'Reads calendar context, drafts email, asks for approval.',
+    complexity: 2,
+    steps: [
+      {
+        type: 'system', label: 'System Prompt', icon: '⚙️',
+        summary: 'Email assistant with calendar and draft tools',
+        content: `You are a professional email drafting assistant. Available tools:
+
+  get_calendar_context(date: string) → CalendarEvents
+  draft_email(to: string, subject: string, body: string) → DraftResult
+  send_email(draft_id: string) → SendResult
+
+Always draft first and confirm with the user before sending. Match the user's writing style.`,
+        detail: { 'Tools': 'get_calendar_context, draft_email, send_email', 'Key rule': 'Draft → confirm → send' },
+        raw: {
+          request: `{
+  "model": "claude-opus-4-6",
+  "max_tokens": 4096,
+  "system": "You are a professional email drafting assistant...",
+  "tools": [
+    { "name": "get_calendar_context" },
+    { "name": "draft_email" },
+    { "name": "send_email" }
+  ],
+  "messages": []
+}`
+        }
+      },
+      {
+        type: 'user', label: 'User Message', icon: '👤',
+        summary: "Draft an apology email to my team for missing today's standup.",
+        content: `Can you draft an apology email to my team for missing today's standup? I overslept. Check my calendar for context about what we were supposed to discuss.`,
+        detail: { 'Intent': 'Draft apology email', 'Required context': 'Calendar' },
+        raw: {
+          request: `{
+  "messages": [
+    {
+      "role": "user",
+      "content": "Can you draft an apology email to my team for missing today's standup? I overslept. Check my calendar for context about what we were supposed to discuss."
+    }
+  ]
+}`
+        }
+      },
+      {
+        type: 'thinking', label: 'LLM Reasoning', icon: '🧠',
+        summary: 'Agent decides to check calendar before drafting',
+        content: `<thinking>
+The user wants an apology email but wants me to reference what was on the standup agenda.
+I should:
+1. get_calendar_context("2026-03-24") to find the standup and its agenda
+2. Use that context to write a relevant, specific apology
+3. Draft the email for review — do NOT send without confirmation
+</thinking>`,
+        detail: { 'Plan': 'Calendar → Draft → Confirm', 'Reasoning tokens': '~55' },
+        raw: {
+          response: `{
+  "role": "assistant",
+  "content": [
+    { "type": "thinking", "thinking": "I should check the calendar first..." },
+    {
+      "type": "tool_use",
+      "id": "tool_call_e001",
+      "name": "get_calendar_context",
+      "input": { "date": "2026-03-24" }
+    }
+  ],
+  "stop_reason": "tool_use",
+  "usage": { "input_tokens": 98, "output_tokens": 77 }
+}`
+        }
+      },
+      {
+        type: 'tool_call', label: 'Tool Call #1 — Calendar Lookup', icon: '🔧',
+        summary: 'get_calendar_context("2026-03-24")',
+        content: `Tool: get_calendar_context
+Arguments: { "date": "2026-03-24" }`,
+        detail: { 'Tool': 'get_calendar_context', 'Call ID': 'tool_call_e001' },
+        raw: {
+          response: `{
+  "type": "tool_use",
+  "id": "tool_call_e001",
+  "name": "get_calendar_context",
+  "input": { "date": "2026-03-24" }
+}`
+        }
+      },
+      {
+        type: 'tool_result', label: 'Tool Result #1 — Calendar', icon: '📦',
+        summary: 'Standup at 9am: Q2 roadmap review + sprint planning',
+        content: `{
+  "events": [
+    {
+      "time": "09:00",
+      "title": "Daily Standup",
+      "attendees": ["team@company.com"],
+      "agenda": "Q2 roadmap review, sprint planning for next 2 weeks, blocker discussion"
+    },
+    {
+      "time": "14:00",
+      "title": "1:1 with Manager",
+      "attendees": ["manager@company.com"]
+    }
+  ]
+}`,
+        detail: { 'Standup agenda': 'Q2 roadmap, sprint planning, blockers', 'Attendees': 'team@company.com' },
+        raw: {
+          request: `{
+  "messages": [
+    ...,
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "tool_result",
+          "tool_use_id": "tool_call_e001",
+          "content": "{\\"events\\":[{\\"time\\":\\"09:00\\",\\"title\\":\\"Daily Standup\\",\\"agenda\\":\\"Q2 roadmap review, sprint planning...\\"}]}"
+        }
+      ]
+    }
+  ]
+}`
+        }
+      },
+      {
+        type: 'tool_call', label: 'Tool Call #2 — Draft Email', icon: '🔧',
+        summary: 'draft_email(to="team@", subject="Apology...", body="...")',
+        content: `Tool: draft_email
+Arguments: {
+  "to": "team@company.com",
+  "subject": "Apology for missing standup this morning",
+  "body": "Hi team,\n\nI want to apologize for missing this morning's standup — I overslept and didn't make it in time.\n\nI know we had the Q2 roadmap review and sprint planning on the agenda. I've reviewed the notes — here's my update:\n\n[User to fill in their own status]\n\nHappy to sync async or answer any blockers in Slack. Sorry again!\n\nBest,\n[Name]"
+}`,
+        detail: { 'Tool': 'draft_email', 'Call ID': 'tool_call_e002', 'Status': 'Draft only — not sent yet' },
+        raw: {
+          response: `{
+  "role": "assistant",
+  "content": [
+    {
+      "type": "tool_use",
+      "id": "tool_call_e002",
+      "name": "draft_email",
+      "input": {
+        "to": "team@company.com",
+        "subject": "Apology for missing standup this morning",
+        "body": "Hi team,\\n\\nI want to apologize for missing this morning's standup..."
+      }
+    }
+  ],
+  "stop_reason": "tool_use",
+  "usage": { "input_tokens": 310, "output_tokens": 132 }
+}`
+        }
+      },
+      {
+        type: 'tool_result', label: 'Tool Result #2 — Draft Saved', icon: '📦',
+        summary: 'Draft saved with ID draft_20260324_001',
+        content: `{
+  "draft_id": "draft_20260324_001",
+  "status": "saved",
+  "preview_url": "drafts/draft_20260324_001"
+}`,
+        detail: { 'Draft ID': 'draft_20260324_001', 'Sent': 'No — awaiting user approval' },
+        raw: {
+          request: `{
+  "messages": [
+    ...,
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "tool_result",
+          "tool_use_id": "tool_call_e002",
+          "content": "{\\"draft_id\\":\\"draft_20260324_001\\",\\"status\\":\\"saved\\"}"
+        }
+      ]
+    }
+  ]
+}`
+        }
+      },
+      {
+        type: 'response', label: 'LLM Response', icon: '💬',
+        summary: 'Shows draft and asks for approval before sending',
+        content: `Here's the draft based on your standup agenda (Q2 roadmap + sprint planning):
+
+---
+**To:** team@company.com
+**Subject:** Apology for missing standup this morning
+
+Hi team,
+
+I want to apologize for missing this morning's standup — I overslept and didn't make it in time.
+
+I know we had the Q2 roadmap review and sprint planning on the agenda. I've reviewed the notes — here's my update: [your status here]
+
+Happy to sync async or answer blockers in Slack. Sorry again!
+Best, [Name]
+
+---
+
+Want me to **send it**, or would you like to make any edits first?`,
+        detail: { 'Draft saved': 'Yes', 'Sent': 'No — waiting for approval', 'Output tokens': '~148' },
+        raw: {
+          response: `{
+  "id": "msg_15WZqQ6x4cHj",
+  "role": "assistant",
+  "content": [
+    {
+      "type": "text",
+      "text": "Here's the draft based on your standup agenda (Q2 roadmap + sprint planning):\\n\\n---\\n**To:** team@company.com..."
+    }
+  ],
+  "stop_reason": "end_turn",
+  "usage": { "input_tokens": 398, "output_tokens": 148 }
+}`,
+          note: 'The agent correctly stops before sending — it drafts and confirms first, respecting the system prompt rule.'
+        }
+      }
+    ]
+  },
+
+  // ── 6. SQL DATA ANALYST ──────────────────────────────────────────────────
+  {
+    id: 'sql', icon: '📊', title: 'SQL Data Analyst',
+    desc: 'Generates SQL, runs queries, interprets results.',
+    complexity: 3,
+    steps: [
+      {
+        type: 'system', label: 'System Prompt', icon: '⚙️',
+        summary: 'Data analyst agent with database and chart tools',
+        content: `You are a senior data analyst. Available tools:
+
+  get_schema(table: string) → TableSchema
+  run_sql(query: string) → QueryResult
+  create_chart(data: object, chart_type: string) → ChartURL
+
+Write efficient SQL. Always inspect the schema before querying. Explain your findings in plain language.`,
+        detail: { 'Tools': 'get_schema, run_sql, create_chart', 'Strategy': 'Schema → Query → Interpret' },
+        raw: {
+          request: `{
+  "model": "claude-opus-4-6",
+  "max_tokens": 4096,
+  "system": "You are a senior data analyst...",
+  "tools": [
+    { "name": "get_schema",   "input_schema": { "properties": { "table": {...} } } },
+    { "name": "run_sql",      "input_schema": { "properties": { "query": {...} } } },
+    { "name": "create_chart", "input_schema": { "properties": { "data": {...}, "chart_type": {...} } } }
+  ],
+  "messages": []
+}`
+        }
+      },
+      {
+        type: 'user', label: 'User Message', icon: '👤',
+        summary: "What were our top 5 revenue-generating products last quarter?",
+        content: `What were our top 5 revenue-generating products last quarter? Show me the numbers and a chart.`,
+        detail: { 'Intent': 'Revenue analysis', 'Output requested': 'Table + chart' },
+        raw: {
+          request: `{
+  "messages": [
+    {
+      "role": "user",
+      "content": "What were our top 5 revenue-generating products last quarter? Show me the numbers and a chart."
+    }
+  ]
+}`
+        }
+      },
+      {
+        type: 'thinking', label: 'LLM Reasoning', icon: '🧠',
+        summary: 'Agent checks schema before writing SQL to avoid errors',
+        content: `<thinking>
+I need to query sales data. Before writing SQL I should:
+1. get_schema("orders") to understand column names and types
+2. Write a query joining orders with products, filtering Q1 2026, grouping by product
+3. run_sql with the correct query
+4. create_chart with the results
+
+Let me start with the schema.
+</thinking>`,
+        detail: { 'Plan': 'Schema → SQL → Chart', 'Reasoning tokens': '~72' },
+        raw: {
+          response: `{
+  "role": "assistant",
+  "content": [
+    { "type": "thinking", "thinking": "I need to query sales data. Before writing SQL..." },
+    {
+      "type": "tool_use",
+      "id": "tool_call_d001",
+      "name": "get_schema",
+      "input": { "table": "orders" }
+    }
+  ],
+  "stop_reason": "tool_use",
+  "usage": { "input_tokens": 105, "output_tokens": 88 }
+}`
+        }
+      },
+      {
+        type: 'tool_call', label: 'Tool Call #1 — Get Schema', icon: '🔧',
+        summary: 'get_schema("orders")',
+        content: `Tool: get_schema
+Arguments: { "table": "orders" }`,
+        detail: { 'Tool': 'get_schema', 'Call ID': 'tool_call_d001' },
+        raw: {
+          response: `{
+  "type": "tool_use",
+  "id": "tool_call_d001",
+  "name": "get_schema",
+  "input": { "table": "orders" }
+}`
+        }
+      },
+      {
+        type: 'tool_result', label: 'Tool Result #1 — Schema', icon: '📦',
+        summary: 'orders table: order_id, product_id, quantity, unit_price, order_date',
+        content: `{
+  "table": "orders",
+  "columns": [
+    { "name": "order_id",    "type": "UUID" },
+    { "name": "product_id",  "type": "UUID" },
+    { "name": "product_name","type": "VARCHAR" },
+    { "name": "quantity",    "type": "INT" },
+    { "name": "unit_price",  "type": "DECIMAL" },
+    { "name": "order_date",  "type": "DATE" }
+  ]
+}`,
+        detail: { 'Key columns': 'quantity, unit_price, order_date, product_name' },
+        raw: {
+          request: `{
+  "messages": [
+    ...,
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "tool_result",
+          "tool_use_id": "tool_call_d001",
+          "content": "{\\"table\\":\\"orders\\",\\"columns\\":[{\\"name\\":\\"order_id\\"},{\\"name\\":\\"product_name\\"},{\\"name\\":\\"quantity\\"},{\\"name\\":\\"unit_price\\"},{\\"name\\":\\"order_date\\"}]}"
+        }
+      ]
+    }
+  ]
+}`
+        }
+      },
+      {
+        type: 'tool_call', label: 'Tool Call #2 — Run SQL', icon: '🔧',
+        summary: 'run_sql(SELECT top 5 products by revenue Q1 2026)',
+        content: `Tool: run_sql
+Arguments: {
+  "query": "SELECT product_name,
+    SUM(quantity * unit_price) AS revenue
+  FROM orders
+  WHERE order_date BETWEEN '2026-01-01' AND '2026-03-31'
+  GROUP BY product_name
+  ORDER BY revenue DESC
+  LIMIT 5"
+}`,
+        detail: { 'Tool': 'run_sql', 'Call ID': 'tool_call_d002', 'Period': 'Q1 2026' },
+        raw: {
+          response: `{
+  "role": "assistant",
+  "content": [
+    {
+      "type": "tool_use",
+      "id": "tool_call_d002",
+      "name": "run_sql",
+      "input": {
+        "query": "SELECT product_name, SUM(quantity * unit_price) AS revenue FROM orders WHERE order_date BETWEEN '2026-01-01' AND '2026-03-31' GROUP BY product_name ORDER BY revenue DESC LIMIT 5"
+      }
+    }
+  ],
+  "stop_reason": "tool_use",
+  "usage": { "input_tokens": 298, "output_tokens": 95 }
+}`
+        }
+      },
+      {
+        type: 'tool_result', label: 'Tool Result #2 — Query Results', icon: '📦',
+        summary: 'Top product: CloudSync Pro at $184,200 revenue',
+        content: `{
+  "rows": [
+    { "product_name": "CloudSync Pro",      "revenue": 184200.00 },
+    { "product_name": "DataVault Enterprise","revenue": 142750.50 },
+    { "product_name": "SecureKey Bundle",   "revenue": 98340.00 },
+    { "product_name": "AnalyticsDash Plus", "revenue": 77210.75 },
+    { "product_name": "AutoReport Basic",   "revenue": 54890.00 }
+  ],
+  "rows_returned": 5,
+  "execution_ms": 128
+}`,
+        detail: { 'Top product': 'CloudSync Pro ($184k)', 'Query time': '128ms' },
+        raw: {
+          request: `{
+  "messages": [
+    ...,
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "tool_result",
+          "tool_use_id": "tool_call_d002",
+          "content": "{\\"rows\\":[{\\"product_name\\":\\"CloudSync Pro\\",\\"revenue\\":184200.00}, ...]}"
+        }
+      ]
+    }
+  ]
+}`
+        }
+      },
+      {
+        type: 'tool_call', label: 'Tool Call #3 — Create Chart', icon: '🔧',
+        summary: 'create_chart(revenue data, "bar")',
+        content: `Tool: create_chart
+Arguments: {
+  "data": {
+    "labels": ["CloudSync Pro","DataVault Enterprise","SecureKey Bundle","AnalyticsDash Plus","AutoReport Basic"],
+    "values": [184200, 142750.5, 98340, 77210.75, 54890]
+  },
+  "chart_type": "bar"
+}`,
+        detail: { 'Tool': 'create_chart', 'Call ID': 'tool_call_d003', 'Type': 'Horizontal bar' },
+        raw: {
+          response: `{
+  "type": "tool_use",
+  "id": "tool_call_d003",
+  "name": "create_chart",
+  "input": {
+    "data": { "labels": ["CloudSync Pro", ...], "values": [184200, ...] },
+    "chart_type": "bar"
+  }
+}`
+        }
+      },
+      {
+        type: 'tool_result', label: 'Tool Result #3 — Chart URL', icon: '📦',
+        summary: 'Chart generated at /charts/q1_top5_revenue.png',
+        content: `{
+  "chart_url": "/charts/q1_top5_revenue.png",
+  "chart_id": "chart_20260324_001",
+  "status": "ready"
+}`,
+        detail: { 'Chart ID': 'chart_20260324_001', 'Format': 'PNG' },
+        raw: {
+          request: `{
+  "messages": [
+    ...,
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "tool_result",
+          "tool_use_id": "tool_call_d003",
+          "content": "{\\"chart_url\\":\\"/charts/q1_top5_revenue.png\\",\\"status\\":\\"ready\\"}"
+        }
+      ]
+    }
+  ]
+}`
+        }
+      },
+      {
+        type: 'response', label: 'LLM Response', icon: '💬',
+        summary: 'Analysis summary with numbers and chart link',
+        content: `Here are your **top 5 revenue products for Q1 2026**:
+
+| Product             | Revenue      |
+|---------------------|-------------|
+| CloudSync Pro       | $184,200     |
+| DataVault Enterprise| $142,750     |
+| SecureKey Bundle    | $98,340      |
+| AnalyticsDash Plus  | $77,210      |
+| AutoReport Basic    | $54,890      |
+
+📊 [View chart →](/charts/q1_top5_revenue.png)
+
+**Key insight:** CloudSync Pro alone accounts for 33% of the top-5 revenue. DataVault is a strong #2 but there's a significant drop-off to #3. Worth investigating if SecureKey Bundle has untapped upsell potential.`,
+        detail: { 'Tool calls': '3', 'Output tokens': '~155', 'Insight included': 'Yes' },
+        raw: {
+          response: `{
+  "id": "msg_20ARsS7y5dIk",
+  "role": "assistant",
+  "content": [
+    {
+      "type": "text",
+      "text": "Here are your **top 5 revenue products for Q1 2026**:\\n\\n| Product | Revenue |..."
+    }
+  ],
+  "stop_reason": "end_turn",
+  "usage": {
+    "input_tokens": 742,
+    "output_tokens": 155
+  }
+}`
+        }
+      }
+    ]
+  },
+
+  // ── 7. TRAVEL PLANNER ────────────────────────────────────────────────────
+  {
+    id: 'travel', icon: '✈️', title: 'Travel Planner',
+    desc: 'Multi-tool: flights, hotels, and full itinerary.',
+    complexity: 3,
+    steps: [
+      {
+        type: 'system', label: 'System Prompt', icon: '⚙️',
+        summary: 'Travel agent with flights, hotels, and itinerary tools',
+        content: `You are an expert travel planning assistant. Available tools:
+
+  search_flights(origin: string, destination: string, date: string, passengers: int) → FlightOptions
+  search_hotels(city: string, checkin: string, checkout: string, budget: string) → HotelOptions
+  build_itinerary(destination: string, days: int, interests: string[]) → Itinerary
+
+Always confirm the trip details before booking. Present options clearly.`,
+        detail: { 'Tools': 'search_flights, search_hotels, build_itinerary', 'Rule': 'Confirm before booking' },
+        raw: {
+          request: `{
+  "model": "claude-opus-4-6",
+  "max_tokens": 4096,
+  "system": "You are an expert travel planning assistant...",
+  "tools": [
+    { "name": "search_flights" },
+    { "name": "search_hotels" },
+    { "name": "build_itinerary" }
+  ],
+  "messages": []
+}`
+        }
+      },
+      {
+        type: 'user', label: 'User Message', icon: '👤',
+        summary: 'Plan a 5-day trip to Tokyo for 2, flying from NYC next month.',
+        content: `I want to plan a 5-day trip to Tokyo for 2 people, flying from New York in late April. Budget is around $3,000 total. I love food and history.`,
+        detail: { 'Destination': 'Tokyo', 'Origin': 'New York', 'Duration': '5 days', 'Budget': '$3,000', 'Interests': 'Food, history' },
+        raw: {
+          request: `{
+  "messages": [
+    {
+      "role": "user",
+      "content": "I want to plan a 5-day trip to Tokyo for 2 people, flying from New York in late April. Budget is around $3,000 total. I love food and history."
+    }
+  ]
+}`
+        }
+      },
+      {
+        type: 'thinking', label: 'LLM Reasoning', icon: '🧠',
+        summary: 'Agent plans to run all 3 tools to assemble the full trip',
+        content: `<thinking>
+The user wants a complete trip plan. I should:
+1. search_flights(JFK → NRT, late April, 2 passengers)
+2. search_hotels(Tokyo, 5 nights, mid-range budget — $3k total leaves ~$1.5k for hotels after flights)
+3. build_itinerary(Tokyo, 5 days, ["food","history"])
+
+Then present a coherent summary with options.
+</thinking>`,
+        detail: { 'Plan': 'Flights + Hotels + Itinerary', 'Budget split': '~$1.2k flights, $1.5k hotel, $300 misc' },
+        raw: {
+          response: `{
+  "role": "assistant",
+  "content": [
+    { "type": "thinking", "thinking": "The user wants a complete trip plan..." },
+    {
+      "type": "tool_use",
+      "id": "tool_call_t001",
+      "name": "search_flights",
+      "input": {
+        "origin": "JFK",
+        "destination": "NRT",
+        "date": "2026-04-25",
+        "passengers": 2
+      }
+    }
+  ],
+  "stop_reason": "tool_use",
+  "usage": { "input_tokens": 128, "output_tokens": 99 }
+}`
+        }
+      },
+      {
+        type: 'tool_call', label: 'Tool Call #1 — Search Flights', icon: '🔧',
+        summary: 'search_flights(JFK → NRT, 2026-04-25, 2 passengers)',
+        content: `Tool: search_flights
+Arguments: {
+  "origin": "JFK",
+  "destination": "NRT",
+  "date": "2026-04-25",
+  "passengers": 2
+}`,
+        detail: { 'Tool': 'search_flights', 'Call ID': 'tool_call_t001' },
+        raw: {
+          response: `{
+  "type": "tool_use",
+  "id": "tool_call_t001",
+  "name": "search_flights",
+  "input": { "origin": "JFK", "destination": "NRT", "date": "2026-04-25", "passengers": 2 }
+}`
+        }
+      },
+      {
+        type: 'tool_result', label: 'Tool Result #1 — Flights', icon: '📦',
+        summary: 'Best option: ANA direct $1,180/person, 14h flight',
+        content: `{
+  "options": [
+    { "airline": "ANA",   "price_per_person": 1180, "duration": "14h 20m", "stops": 0, "departure": "22:00 JFK" },
+    { "airline": "JAL",   "price_per_person": 1210, "duration": "14h 05m", "stops": 0, "departure": "11:30 JFK" },
+    { "airline": "Delta", "price_per_person": 980,  "duration": "18h 45m", "stops": 1, "departure": "07:00 JFK" }
+  ]
+}`,
+        detail: { 'Best value': 'ANA direct $1,180/pp', 'Budget': '$2,360 for 2 on flights' },
+        raw: {
+          request: `{
+  "messages": [
+    ...,
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "tool_result",
+          "tool_use_id": "tool_call_t001",
+          "content": "{\\"options\\":[{\\"airline\\":\\"ANA\\",\\"price_per_person\\":1180,...}]}"
+        }
+      ]
+    }
+  ]
+}`
+        }
+      },
+      {
+        type: 'tool_call', label: 'Tool Call #2 — Search Hotels', icon: '🔧',
+        summary: 'search_hotels(Tokyo, 5 nights, mid-range)',
+        content: `Tool: search_hotels
+Arguments: {
+  "city": "Tokyo",
+  "checkin": "2026-04-26",
+  "checkout": "2026-05-01",
+  "budget": "mid-range"
+}`,
+        detail: { 'Tool': 'search_hotels', 'Call ID': 'tool_call_t002', 'Budget tier': 'Mid-range (~$150/night)' },
+        raw: {
+          response: `{
+  "role": "assistant",
+  "content": [
+    {
+      "type": "tool_use",
+      "id": "tool_call_t002",
+      "name": "search_hotels",
+      "input": { "city": "Tokyo", "checkin": "2026-04-26", "checkout": "2026-05-01", "budget": "mid-range" }
+    }
+  ],
+  "stop_reason": "tool_use",
+  "usage": { "input_tokens": 398, "output_tokens": 68 }
+}`
+        }
+      },
+      {
+        type: 'tool_result', label: 'Tool Result #2 — Hotels', icon: '📦',
+        summary: 'Top pick: Shinjuku Granbell, $148/night, great food access',
+        content: `{
+  "options": [
+    { "name": "Shinjuku Granbell Hotel", "area": "Shinjuku", "price_per_night": 148, "rating": 4.5, "highlights": "Walking distance to Omoide Yokocho, great transport links" },
+    { "name": "Asakusa View Hotel",      "area": "Asakusa", "price_per_night": 162, "rating": 4.4, "highlights": "Views of Senso-ji Temple, historic neighborhood" },
+    { "name": "Mitsui Garden Ginza",     "area": "Ginza",   "price_per_night": 175, "rating": 4.6, "highlights": "Upscale area, close to Tsukiji outer market" }
+  ]
+}`,
+        detail: { 'Best for interests': 'Asakusa (history) or Shinjuku (food)', '5-night cost': '~$740–$875' },
+        raw: {
+          request: `{
+  "messages": [
+    ...,
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "tool_result",
+          "tool_use_id": "tool_call_t002",
+          "content": "{\\"options\\":[{\\"name\\":\\"Shinjuku Granbell\\",\\"price_per_night\\":148,...}]}"
+        }
+      ]
+    }
+  ]
+}`
+        }
+      },
+      {
+        type: 'tool_call', label: 'Tool Call #3 — Build Itinerary', icon: '🔧',
+        summary: 'build_itinerary(Tokyo, 5 days, food + history)',
+        content: `Tool: build_itinerary
+Arguments: {
+  "destination": "Tokyo",
+  "days": 5,
+  "interests": ["food", "history"]
+}`,
+        detail: { 'Tool': 'build_itinerary', 'Call ID': 'tool_call_t003' },
+        raw: {
+          response: `{
+  "type": "tool_use",
+  "id": "tool_call_t003",
+  "name": "build_itinerary",
+  "input": { "destination": "Tokyo", "days": 5, "interests": ["food","history"] }
+}`
+        }
+      },
+      {
+        type: 'tool_result', label: 'Tool Result #3 — Itinerary', icon: '📦',
+        summary: '5-day itinerary: Senso-ji → Tsukiji → TeamLab → Nikko day trip',
+        content: `{
+  "days": [
+    { "day": 1, "theme": "Arrival + Shinjuku", "highlights": ["Omoide Yokocho for yakitori", "Golden Gai bars"] },
+    { "day": 2, "theme": "Old Tokyo", "highlights": ["Senso-ji Temple", "Asakusa market", "Tokyo Skytree"] },
+    { "day": 3, "theme": "Food deep dive", "highlights": ["Tsukiji outer market breakfast", "Ramen museum Yokohama"] },
+    { "day": 4, "theme": "Day trip", "highlights": ["Nikko Tosho-gu shrine", "Kegon Falls"] },
+    { "day": 5, "theme": "Modern Tokyo + Departure", "highlights": ["teamLab Planets", "Shibuya crossing"] }
+  ]
+}`,
+        detail: { 'Days covered': '5', 'Mix': 'History (Senso-ji, Nikko) + Food (Tsukiji, ramen)' },
+        raw: {
+          request: `{
+  "messages": [
+    ...,
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "tool_result",
+          "tool_use_id": "tool_call_t003",
+          "content": "{\\"days\\":[{\\"day\\":1,\\"theme\\":\\"Arrival + Shinjuku\\", ...}]}"
+        }
+      ]
+    }
+  ]
+}`
+        }
+      },
+      {
+        type: 'response', label: 'LLM Response', icon: '💬',
+        summary: 'Complete trip plan with budget breakdown and options',
+        content: `Here's your **5-day Tokyo trip plan** for 2! 🗼
+
+**Flights** (recommended): ANA JFK→NRT direct, Apr 25 — $1,180/person ($2,360 total)
+**Hotel** (recommended): Asakusa View Hotel — $162/night × 5 = $810 (great for history lovers!)
+
+**Budget summary:**
+- Flights: $2,360
+- Hotel: $810
+- Food + activities: ~$400
+- **Total: ~$3,570** (slightly over — consider Delta 1-stop at $980/pp to stay under $3k)
+
+**5-Day Highlights:**
+- Day 1: Shinjuku food scene
+- Day 2: Senso-ji Temple & Asakusa
+- Day 3: Tsukiji market + Yokohama ramen
+- Day 4: Nikko shrines day trip
+- Day 5: teamLab + Shibuya
+
+Shall I refine any part or start booking?`,
+        detail: { 'Tool calls': '3', 'Budget check': 'Slight overage noted', 'Output tokens': '~195' },
+        raw: {
+          response: `{
+  "id": "msg_25CTtT8z6eJl",
+  "role": "assistant",
+  "content": [
+    {
+      "type": "text",
+      "text": "Here's your **5-day Tokyo trip plan** for 2! 🗼\\n\\n**Flights** (recommended): ANA JFK→NRT direct..."
+    }
+  ],
+  "stop_reason": "end_turn",
+  "usage": {
+    "input_tokens": 1024,
+    "output_tokens": 195
+  }
+}`,
+          note: 'Notice input_tokens grew to 1024 — the full conversation history (all messages + tool results) is re-sent on every API call. This is a key cost driver in agentic systems.'
+        }
+      }
+    ]
+  }
+
+]; // end USE_CASES
+
+// ─────────────────────────────────────────────
+// STATE
+// ─────────────────────────────────────────────
+let currentCase = null;
+let currentStep = -1;
+let isPlaying = false;
+let playTimer = null;
+let selectedStepEl = null;
+let activeTab = 'details';
+
+// ─────────────────────────────────────────────
+// INIT
+// ─────────────────────────────────────────────
+function init() {
+  const sidebar = document.querySelector('.sidebar');
+  USE_CASES.forEach(uc => {
+    const dots = [1,2,3].map(i => `<div class="dot ${i <= uc.complexity ? 'filled' : ''}"></div>`).join('');
+    const card = document.createElement('div');
+    card.className = 'case-card';
+    card.dataset.id = uc.id;
+    card.innerHTML = `
+      <div class="icon">${uc.icon}</div>
+      <div class="title">${uc.title}</div>
+      <div class="desc">${uc.desc}</div>
+      <div class="complexity">${dots}</div>
+    `;
+    card.onclick = () => selectCase(uc.id);
+    sidebar.appendChild(card);
+  });
+}
+
+// ─────────────────────────────────────────────
+// TABS
+// ─────────────────────────────────────────────
+function setTab(tab) {
+  activeTab = tab;
+  document.getElementById('tabBtnDetails').classList.toggle('active', tab === 'details');
+  document.getElementById('tabBtnRaw').classList.toggle('active', tab === 'raw');
+  document.getElementById('paneDetails').classList.toggle('active', tab === 'details');
+  document.getElementById('paneRaw').classList.toggle('active', tab === 'raw');
+}
+
+// ─────────────────────────────────────────────
+// SELECT USE CASE
+// ─────────────────────────────────────────────
+function selectCase(id) {
+  if (isPlaying) pausePlay();
+  currentCase = USE_CASES.find(uc => uc.id === id);
+  currentStep = -1;
+  selectedStepEl = null;
+  document.querySelectorAll('.case-card').forEach(c => c.classList.remove('active'));
+  document.querySelector(`.case-card[data-id="${id}"]`).classList.add('active');
+  renderFlow();
+  updateControls();
+  setDetailEmpty();
+}
+
+// ─────────────────────────────────────────────
+// RENDER FLOW
+// ─────────────────────────────────────────────
+function renderFlow() {
+  const scroll = document.getElementById('flowScroll');
+  scroll.innerHTML = '';
+  if (!currentCase) return;
+  currentCase.steps.forEach((step, i) => {
+    if (i > 0) {
+      const arrow = document.createElement('div');
+      arrow.className = 'arrow';
+      arrow.id = `arrow-${i}`;
+      arrow.innerHTML = `<div class="arrow-line"></div><div class="arrow-head"></div>`;
+      scroll.appendChild(arrow);
+    }
+    const wrapper = document.createElement('div');
+    wrapper.className = 'step-wrapper';
+    wrapper.id = `step-${i}`;
+    const card = document.createElement('div');
+    card.className = `step-card type-${step.type}`;
+    card.onclick = () => selectStep(i, card);
+    const extraBadge = step.type === 'loop'
+      ? `<span class="loop-badge">🔄 Agentic Loop · Iteration check</span>` : '';
+    card.innerHTML = `
+      <div class="step-header">
+        <span class="step-icon">${step.icon}</span>
+        <span>${step.label}</span>
+        <span class="step-type">${step.type.replace('_',' ')}</span>
+      </div>
+      <div class="step-body">
+        ${extraBadge}
+        <pre>${escapeHtml(step.summary)}</pre>
+        <div class="expand-hint">Click to inspect details and raw API →</div>
+      </div>
+    `;
+    wrapper.appendChild(card);
+    scroll.appendChild(wrapper);
+  });
+}
+
+// ─────────────────────────────────────────────
+// PLAYBACK
+// ─────────────────────────────────────────────
+function togglePlay() { isPlaying ? pausePlay() : startPlay(); }
+
+function startPlay() {
+  isPlaying = true;
+  document.getElementById('btnPlay').textContent = '⏸ Pause';
+  document.getElementById('btnPlay').classList.add('primary');
+  advanceStep();
+}
+
+function pausePlay() {
+  isPlaying = false;
+  clearTimeout(playTimer);
+  document.getElementById('btnPlay').textContent = '▶ Play';
+}
+
+function advanceStep() {
+  if (!isPlaying) return;
+  if (currentStep >= currentCase.steps.length - 1) { pausePlay(); return; }
+  stepForward();
+  if (currentStep < currentCase.steps.length - 1) playTimer = setTimeout(advanceStep, 1400);
+  else pausePlay();
+}
+
+function stepForward() {
+  if (!currentCase || currentStep >= currentCase.steps.length - 1) return;
+  currentStep++;
+  revealStep(currentStep);
+  updateControls();
+}
+
+function stepBack() {
+  if (!currentCase || currentStep <= 0) return;
+  hideStep(currentStep);
+  currentStep--;
+  updateControls();
+}
+
+function resetFlow() {
+  if (isPlaying) pausePlay();
+  currentStep = -1;
+  selectedStepEl = null;
+  renderFlow();
+  updateControls();
+  setDetailEmpty();
+}
+
+function revealStep(i) {
+  const wrapper = document.getElementById(`step-${i}`);
+  if (wrapper) {
+    wrapper.classList.add('visible');
+    setTimeout(() => wrapper.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 50);
+  }
+  const arrow = document.getElementById(`arrow-${i}`);
+  if (arrow) arrow.classList.add('visible');
+}
+
+function hideStep(i) {
+  const wrapper = document.getElementById(`step-${i}`);
+  if (wrapper) wrapper.classList.remove('visible');
+  const arrow = document.getElementById(`arrow-${i}`);
+  if (arrow) arrow.classList.remove('visible');
+}
+
+// ─────────────────────────────────────────────
+// STEP SELECTION
+// ─────────────────────────────────────────────
+function selectStep(i, cardEl) {
+  if (i > currentStep) return;
+  if (selectedStepEl) selectedStepEl.classList.remove('active-card');
+  selectedStepEl = cardEl;
+  cardEl.classList.add('active-card');
+
+  const step = currentCase.steps[i];
+  renderDetailsPane(step);
+  renderRawPane(step);
+}
+
+function renderDetailsPane(step) {
+  const panel = document.getElementById('detailContent');
+  panel.innerHTML = '';
+
+  const badge = document.createElement('div');
+  badge.style.cssText = `display:inline-flex;align-items:center;gap:6px;background:var(--bg3);border:1px solid var(--border);border-radius:20px;padding:4px 10px;font-size:0.72rem;font-weight:600;margin-bottom:12px;`;
+  badge.textContent = `${step.icon} ${step.label}`;
+  panel.appendChild(badge);
+
+  const fullField = document.createElement('div');
+  fullField.className = 'field';
+  fullField.innerHTML = `<div class="field-label">Full Content</div><div class="field-value">${escapeHtml(step.content)}</div>`;
+  panel.appendChild(fullField);
+
+  if (step.detail) {
+    Object.entries(step.detail).forEach(([k, v]) => {
+      const f = document.createElement('div');
+      f.className = 'field';
+      f.innerHTML = `<div class="field-label">${escapeHtml(k)}</div><div class="field-value">${escapeHtml(String(v))}</div>`;
+      panel.appendChild(f);
+    });
+  }
+}
+
+function renderRawPane(step) {
+  const panel = document.getElementById('rawContent');
+  panel.innerHTML = '';
+
+  const raw = step.raw || {};
+  const hasRequest  = !!raw.request;
+  const hasResponse = !!raw.response;
+  const hasNote     = !!raw.note;
+
+  if (!hasRequest && !hasResponse && !hasNote) {
+    panel.innerHTML = `<div class="empty-detail"><div class="em-icon">🔌</div><div>No direct API call at this step</div></div>`;
+    return;
+  }
+
+  if (hasRequest) {
+    const block = document.createElement('div');
+    block.className = 'raw-block';
+    block.innerHTML = `
+      <div class="raw-label request">➡ Request to Claude API <span class="pill">SENT</span></div>
+      <div class="raw-code">${syntaxHighlight(raw.request)}</div>
+    `;
+    panel.appendChild(block);
+  }
+
+  if (hasResponse) {
+    const block = document.createElement('div');
+    block.className = 'raw-block';
+    block.innerHTML = `
+      <div class="raw-label response">⬅ Response from Claude API <span class="pill">RECEIVED</span></div>
+      <div class="raw-code">${syntaxHighlight(raw.response)}</div>
+    `;
+    panel.appendChild(block);
+  }
+
+  if (hasNote) {
+    const note = document.createElement('div');
+    note.className = 'raw-note';
+    note.textContent = `💡 ${raw.note}`;
+    panel.appendChild(note);
+  }
+}
+
+function setDetailEmpty() {
+  document.getElementById('detailContent').innerHTML = `<div class="empty-detail"><div class="em-icon">🔍</div><div>Click any step card to inspect its content</div></div>`;
+  document.getElementById('rawContent').innerHTML = `<div class="empty-detail"><div class="em-icon">📡</div><div>Click any step to see raw API payloads</div></div>`;
+}
+
+// ─────────────────────────────────────────────
+// CONTROLS
+// ─────────────────────────────────────────────
+function updateControls() {
+  const total = currentCase ? currentCase.steps.length : 0;
+  const atEnd = currentStep >= total - 1;
+  const atStart = currentStep < 0;
+  document.getElementById('btnPlay').disabled = !currentCase || atEnd;
+  document.getElementById('btnNext').disabled = !currentCase || atEnd;
+  document.getElementById('btnPrev').disabled = !currentCase || atStart;
+  document.getElementById('btnReset').disabled = !currentCase;
+  document.getElementById('stepCounter').textContent = currentCase ? `${currentStep + 1} / ${total}` : '— / —';
+  const pct = total > 0 ? ((currentStep + 1) / total) * 100 : 0;
+  document.getElementById('progressFill').style.width = `${pct}%`;
+}
+
+// ─────────────────────────────────────────────
+// UTILS
+// ─────────────────────────────────────────────
+function escapeHtml(str) {
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function syntaxHighlight(code) {
+  // Basic JSON-ish syntax coloring via regex on escaped HTML
+  return escapeHtml(code)
+    .replace(/(&quot;[^&]*&quot;)\s*:/g, '<span class="json-key">$1</span>:')
+    .replace(/:\s*(&quot;[^&]*&quot;)/g, ': <span class="json-str">$1</span>')
+    .replace(/:\s*(-?\d+\.?\d*)/g, ': <span class="json-num">$1</span>')
+    .replace(/:\s*(true|false|null)/g, ': <span class="json-bool">$1</span>');
+}
+
+// ─────────────────────────────────────────────
+// RESIZE HANDLE (Pointer Events — works in Safari)
+// ─────────────────────────────────────────────
+(function() {
+  const handle = document.getElementById('resizeHandle');
+  const panel  = document.getElementById('detailPanel');
+  let startX, startW;
+
+  handle.addEventListener('pointerdown', e => {
+    startX = e.clientX;
+    startW = panel.offsetWidth;
+    handle.setPointerCapture(e.pointerId);
+    handle.classList.add('dragging');
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    e.preventDefault();
+  });
+
+  handle.addEventListener('pointermove', e => {
+    if (!handle.hasPointerCapture(e.pointerId)) return;
+    const newW = Math.min(650, Math.max(160, startW + (startX - e.clientX)));
+    panel.style.width = newW + 'px';
+  });
+
+  handle.addEventListener('pointerup', e => {
+    if (!handle.hasPointerCapture(e.pointerId)) return;
+    handle.releasePointerCapture(e.pointerId);
+    handle.classList.remove('dragging');
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+  });
+})();
+
+init();
+</script>
+</body>
+</html>
