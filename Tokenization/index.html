@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>LLM Inference Explorer</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main class="app">
+    <header class="hero">
+      <div>
+        <p class="eyebrow">Tokenization → Inference → Sampling</p>
+        <h1>LLM Inference Explorer</h1>
+        <p class="lede">
+          Watch a prompt become tokens, see those tokens flow into a simplified model,
+          and generate text one token at a time while you tune temperature.
+        </p>
+      </div>
+      <div class="badge">Conceptual Mode</div>
+    </header>
+
+    <section class="panel">
+      <div class="panel-header">
+        <h2>1) Prompt</h2>
+        <div class="panel-actions">
+          <button id="tokenizeBtn" class="btn primary">Tokenize Prompt</button>
+          <button id="resetBtn" class="btn">Reset</button>
+        </div>
+      </div>
+      <textarea id="promptInput" rows="4" placeholder="Type your prompt here...">Write a short story about a lighthouse at dawn.</textarea>
+      <div class="token-strip" id="promptTokens"></div>
+      <div class="hint">Tokens are chunked pieces of text that the model consumes.</div>
+    </section>
+
+    <section class="grid">
+      <div class="panel">
+        <div class="panel-header">
+          <h2>2) Model Input</h2>
+        </div>
+        <div class="flow" id="inputFlow">
+          <div class="flow-node">Tokens</div>
+          <div class="flow-arrow">→</div>
+          <div class="flow-node">Embedding</div>
+          <div class="flow-arrow">→</div>
+          <div class="flow-node">Transformer Blocks</div>
+          <div class="flow-arrow">→</div>
+          <div class="flow-node">Logits</div>
+        </div>
+        <div class="hint">This is a simplified view of inference inside an LLM.</div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">
+          <h2>3) Sampling Controls</h2>
+        </div>
+        <label class="control">
+          <span>Temperature</span>
+          <input id="tempSlider" type="range" min="0.2" max="1.6" step="0.05" value="0.9" />
+          <span id="tempValue" class="mono">0.90</span>
+        </label>
+        <label class="control">
+          <span>Max new tokens</span>
+          <input id="maxTokens" type="number" min="1" max="40" value="18" />
+        </label>
+        <div class="panel-actions">
+          <button id="stepBtn" class="btn primary">Generate Next Token</button>
+          <button id="autoBtn" class="btn">Auto Play</button>
+        </div>
+        <div class="hint">Higher temperature increases randomness; lower temperature is more focused.</div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header">
+        <h2>4) Token-by-Token Generation</h2>
+      </div>
+      <div class="generation">
+        <div>
+          <h3>Generated Tokens</h3>
+          <div id="generatedTokens" class="token-strip"></div>
+        </div>
+        <div>
+          <h3>Live Output</h3>
+          <div id="liveOutput" class="output"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header">
+        <h2>5) Probabilities (Top Candidates)</h2>
+      </div>
+      <div id="probabilities" class="probs"></div>
+      <div class="hint">Probabilities are derived from logits scaled by temperature and softmax.</div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    Built for learning: conceptual math, intuitive UI, no external APIs.
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
