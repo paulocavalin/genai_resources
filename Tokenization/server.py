@@ -137,8 +137,9 @@ async def tokenize_endpoint(payload: TokenizeRequest):
 async def step_endpoint(payload: StepRequest):
     prompt = payload.prompt
     generated_text = payload.generated_text or ""
-    temperature = max(payload.temperature, 0.05)
+    temperature = max(payload.temperature, 0.0)
     top_k = max(1, min(payload.top_k, 20))
+    greedy = temperature == 0.0
 
     prompt_ids = tokenizer(
         prompt,
@@ -160,10 +161,13 @@ async def step_endpoint(payload: StepRequest):
     with torch.no_grad():
         outputs = model(input_ids=input_ids)
         logits = outputs.logits[:, -1, :]
-        logits = logits / temperature
-        probs = torch.softmax(logits, dim=-1)
-
-    next_id = torch.multinomial(probs, num_samples=1)
+        if greedy:
+            probs = torch.softmax(logits, dim=-1)
+            next_id = torch.argmax(logits, dim=-1, keepdim=True)
+        else:
+            logits = logits / temperature
+            probs = torch.softmax(logits, dim=-1)
+            next_id = torch.multinomial(probs, num_samples=1)
     next_id_int = next_id.item()
     next_token = tokenizer.convert_ids_to_tokens([next_id_int])[0]
 
