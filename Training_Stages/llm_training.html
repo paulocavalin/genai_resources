@@ -1,0 +1,1510 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>LLM Training Stages</title>
+<style>
+  :root {
+    --bg:      #0f1117;
+    --bg2:     #1a1d27;
+    --bg3:     #252836;
+    --border:  #2e3248;
+    --text:    #e2e8f0;
+    --dim:     #8892a4;
+    --blue:    #3b82f6;
+    --blue-bg: #1e3a5f;
+    --purple:  #a855f7;
+    --purple-bg: #3b1f5e;
+    --teal:    #10b981;
+    --teal-bg: #064e3b;
+    --amber:   #f59e0b;
+    --amber-bg:#451a03;
+    --cyan:    #06b6d4;
+    --cyan-bg: #083344;
+    --r:       10px;
+    --rl:      16px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ── HEADER ─────────────────────────────────────── */
+  header {
+    background: var(--bg2);
+    border-bottom: 1px solid var(--border);
+    padding: 14px 28px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-shrink: 0;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  header h1 {
+    font-size: 1.1rem;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    background: linear-gradient(90deg, var(--blue), var(--purple));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  header p { font-size: 0.78rem; color: var(--dim); }
+
+  /* progress bar */
+  #progress-bar-wrap {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-shrink: 0;
+  }
+  #progress-track {
+    width: 180px;
+    height: 5px;
+    background: var(--border);
+    border-radius: 99px;
+    overflow: hidden;
+  }
+  #progress-fill {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, var(--blue), var(--purple));
+    border-radius: 99px;
+    transition: width 0.4s ease;
+  }
+  #btn-playpause {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-size: 0.8rem;
+    padding: 5px 14px;
+    border-radius: var(--r);
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+    white-space: nowrap;
+  }
+  #btn-playpause:hover { border-color: var(--blue); background: var(--blue-bg); }
+
+  /* ── TABS ────────────────────────────────────────── */
+  .tabs {
+    display: flex;
+    gap: 6px;
+    padding: 16px 28px 0;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg2);
+    flex-shrink: 0;
+  }
+  .tab {
+    padding: 8px 18px;
+    border-radius: var(--r) var(--r) 0 0;
+    border: 1px solid transparent;
+    border-bottom: none;
+    cursor: pointer;
+    font-size: 0.83rem;
+    font-weight: 600;
+    color: var(--dim);
+    transition: all 0.18s;
+    position: relative;
+    bottom: -1px;
+    background: transparent;
+  }
+  .tab:hover { color: var(--text); background: var(--bg3); }
+  .tab.active {
+    color: var(--text);
+    background: var(--bg);
+    border-color: var(--border);
+    border-bottom-color: var(--bg);
+  }
+  .tab[data-stage="0"].active { color: var(--blue); }
+  .tab[data-stage="1"].active { color: var(--teal); }
+  .tab[data-stage="2"].active { color: var(--purple); }
+
+  /* ── CONTENT AREA ───────────────────────────────── */
+  .content {
+    flex: 1;
+    padding: 32px 28px;
+    max-width: 960px;
+    margin: 0 auto;
+    width: 100%;
+  }
+
+  /* stage panel */
+  .stage-panel { display: none; }
+  .stage-panel.active { display: block; }
+
+  /* stage header card */
+  .stage-header {
+    border-radius: var(--rl);
+    border: 1px solid var(--border);
+    background: var(--bg2);
+    padding: 24px 28px;
+    margin-bottom: 28px;
+    display: flex;
+    gap: 20px;
+    align-items: flex-start;
+  }
+  .stage-icon {
+    width: 52px;
+    height: 52px;
+    border-radius: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.6rem;
+    flex-shrink: 0;
+  }
+  .stage-header-text h2 {
+    font-size: 1.25rem;
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+  .stage-header-text p {
+    font-size: 0.87rem;
+    color: var(--dim);
+    line-height: 1.6;
+    max-width: 640px;
+  }
+  .badge-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  .badge {
+    font-size: 0.72rem;
+    font-weight: 600;
+    padding: 3px 10px;
+    border-radius: 99px;
+    border: 1px solid;
+  }
+
+  /* animation panels */
+  .anim-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    margin-bottom: 20px;
+  }
+  @media (max-width: 640px) { .anim-grid { grid-template-columns: 1fr; } }
+
+  .anim-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: var(--rl);
+    padding: 20px;
+    overflow: hidden;
+  }
+  .anim-card.full { grid-column: 1 / -1; }
+  .anim-card h3 {
+    font-size: 0.82rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--dim);
+    margin-bottom: 16px;
+  }
+
+  /* ══════════════════════════════════════════════════
+     STAGE 1 — PRE-TRAINING
+  ══════════════════════════════════════════════════ */
+
+  /* Token stream */
+  .token-stream {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    min-height: 80px;
+    align-items: center;
+  }
+  .token {
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    font-family: monospace;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    color: var(--text);
+    transition: all 0.3s;
+    white-space: nowrap;
+  }
+  .token.highlight {
+    background: var(--blue-bg);
+    border-color: var(--blue);
+    color: var(--blue);
+    box-shadow: 0 0 10px rgba(59,130,246,0.3);
+  }
+  .token.masked {
+    background: var(--bg3);
+    border-color: var(--amber);
+    color: var(--amber);
+    letter-spacing: 2px;
+  }
+  .token.predicted {
+    background: var(--teal-bg);
+    border-color: var(--teal);
+    color: var(--teal);
+    animation: pop 0.3s ease;
+  }
+  .token.flowing {
+    animation: slideIn 0.3s ease;
+  }
+  @keyframes slideIn {
+    from { opacity: 0; transform: translateX(-10px); }
+    to   { opacity: 1; transform: translateX(0); }
+  }
+  @keyframes pop {
+    0%   { transform: scale(0.8); }
+    50%  { transform: scale(1.15); }
+    100% { transform: scale(1); }
+  }
+
+  /* Next-token prediction area */
+  .ntp-container {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .ntp-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .ntp-label {
+    font-size: 0.72rem;
+    color: var(--dim);
+    min-width: 70px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .ntp-tokens { display: flex; gap: 5px; flex-wrap: wrap; }
+
+  /* Transformer block SVG */
+  .transformer-block {
+    width: 100%;
+    display: flex;
+    justify-content: center;
+  }
+
+  /* Loss curve */
+  .loss-curve-wrap { position: relative; }
+  .loss-curve-wrap svg { width: 100%; height: 140px; display: block; }
+  .loss-path {
+    fill: none;
+    stroke: var(--blue);
+    stroke-width: 2.5;
+    stroke-dasharray: 600;
+    stroke-dashoffset: 600;
+    transition: stroke-dashoffset 3s ease;
+  }
+  .loss-path.drawn { stroke-dashoffset: 0; }
+  .loss-area {
+    fill: url(#lossGrad);
+    opacity: 0;
+    transition: opacity 1s ease 0.5s;
+  }
+  .loss-area.drawn { opacity: 1; }
+  .loss-label-current {
+    font-size: 0.75rem;
+    fill: var(--text);
+  }
+
+  /* ══════════════════════════════════════════════════
+     STAGE 2 — SFT
+  ══════════════════════════════════════════════════ */
+  .pair-flow {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .pair-item {
+    border-radius: var(--r);
+    padding: 12px 16px;
+    font-size: 0.83rem;
+    line-height: 1.5;
+    border: 1px solid;
+    opacity: 0;
+    transform: translateX(-16px);
+    transition: opacity 0.4s ease, transform 0.4s ease;
+  }
+  .pair-item.visible {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  .pair-item.instruction {
+    background: var(--blue-bg);
+    border-color: var(--blue);
+  }
+  .pair-item.response {
+    background: var(--teal-bg);
+    border-color: var(--teal);
+  }
+  .pair-item .pair-tag {
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 5px;
+  }
+  .pair-item.instruction .pair-tag { color: var(--blue); }
+  .pair-item.response .pair-tag { color: var(--teal); }
+
+  /* Weight diff visualization */
+  .weight-grid {
+    display: grid;
+    grid-template-columns: repeat(10, 1fr);
+    gap: 3px;
+  }
+  .weight-cell {
+    height: 20px;
+    border-radius: 3px;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    transition: background 0.4s ease, border-color 0.4s ease;
+  }
+  .weight-cell.activated {
+    background: var(--teal-bg);
+    border-color: var(--teal);
+  }
+  .weight-cell.strong {
+    background: var(--teal);
+    border-color: var(--teal);
+  }
+
+  /* Contrast bar */
+  .contrast-bars {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .contrast-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .contrast-label {
+    font-size: 0.75rem;
+    color: var(--dim);
+    min-width: 90px;
+  }
+  .contrast-bar-track {
+    flex: 1;
+    height: 10px;
+    background: var(--bg3);
+    border-radius: 99px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+  }
+  .contrast-bar-fill {
+    height: 100%;
+    border-radius: 99px;
+    width: 0%;
+    transition: width 1.5s ease;
+  }
+  .contrast-bar-fill.raw { background: var(--amber); }
+  .contrast-bar-fill.curated { background: var(--teal); }
+  .contrast-val {
+    font-size: 0.75rem;
+    color: var(--dim);
+    min-width: 30px;
+    text-align: right;
+  }
+
+  /* ══════════════════════════════════════════════════
+     STAGE 3 — RLHF
+  ══════════════════════════════════════════════════ */
+  .rlhf-pipeline {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 16px;
+  }
+  @media (max-width: 640px) { .rlhf-pipeline { grid-template-columns: 1fr; } }
+
+  .rlhf-step {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    transition: border-color 0.3s;
+  }
+  .rlhf-step.active-step { border-color: var(--purple); box-shadow: 0 0 14px rgba(168,85,247,0.2); }
+  .rlhf-step-title {
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--purple);
+  }
+
+  /* Response candidates */
+  .response-candidate {
+    font-size: 0.77rem;
+    padding: 7px 10px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--bg2);
+    color: var(--dim);
+    line-height: 1.4;
+    transition: all 0.3s;
+    position: relative;
+  }
+  .response-candidate.rank-1 {
+    border-color: var(--teal);
+    color: var(--text);
+    background: var(--teal-bg);
+  }
+  .response-candidate.rank-2 {
+    border-color: var(--amber);
+    color: var(--text);
+  }
+  .response-candidate.rank-3 {
+    border-color: var(--border);
+    opacity: 0.6;
+  }
+  .rank-badge {
+    position: absolute;
+    top: -7px;
+    right: 8px;
+    font-size: 0.65rem;
+    font-weight: 700;
+    padding: 1px 7px;
+    border-radius: 99px;
+  }
+  .rank-badge.r1 { background: var(--teal); color: #000; }
+  .rank-badge.r2 { background: var(--amber); color: #000; }
+  .rank-badge.r3 { background: var(--border); color: var(--dim); }
+
+  /* Human rater */
+  .rater-area {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    align-items: center;
+  }
+  .rater-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: var(--purple-bg);
+    border: 2px solid var(--purple);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.2rem;
+  }
+  .pref-arrow {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.72rem;
+    color: var(--dim);
+  }
+  .thumb {
+    font-size: 1rem;
+    opacity: 0;
+    transition: opacity 0.4s;
+  }
+  .thumb.visible { opacity: 1; }
+
+  /* Reward bars */
+  .reward-bars { display: flex; flex-direction: column; gap: 8px; }
+  .reward-row { display: flex; align-items: center; gap: 8px; }
+  .reward-label { font-size: 0.72rem; color: var(--dim); min-width: 55px; }
+  .reward-track {
+    flex: 1;
+    height: 8px;
+    background: var(--bg2);
+    border-radius: 99px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+  }
+  .reward-fill {
+    height: 100%;
+    border-radius: 99px;
+    width: 0%;
+    transition: width 1.2s ease;
+  }
+  .reward-fill.high { background: var(--teal); }
+  .reward-fill.mid  { background: var(--amber); }
+  .reward-fill.low  { background: #ef4444; }
+  .reward-score {
+    font-size: 0.72rem;
+    min-width: 30px;
+    text-align: right;
+    color: var(--dim);
+    font-family: monospace;
+  }
+
+  /* PPO update pulse */
+  .ppo-box {
+    background: var(--purple-bg);
+    border: 1px solid var(--purple);
+    border-radius: var(--r);
+    padding: 10px;
+    text-align: center;
+    font-size: 0.8rem;
+    color: var(--purple);
+    font-weight: 600;
+    position: relative;
+    overflow: hidden;
+  }
+  .ppo-box::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, transparent, rgba(168,85,247,0.2), transparent);
+    transform: translateX(-100%);
+    animation: shimmer 2s ease infinite;
+  }
+  @keyframes shimmer {
+    0%   { transform: translateX(-100%); }
+    100% { transform: translateX(100%); }
+  }
+  .kl-bar-wrap { margin-top: 8px; }
+  .kl-label { font-size: 0.68rem; color: var(--dim); margin-bottom: 4px; }
+  .kl-track {
+    height: 6px;
+    background: var(--bg2);
+    border-radius: 99px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+  }
+  .kl-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--purple), var(--blue));
+    border-radius: 99px;
+    width: 0%;
+    transition: width 1.5s ease;
+    animation: kl-pulse 2s ease infinite;
+  }
+  @keyframes kl-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+  }
+
+  /* ── SHARED UTILITIES ───────────────────────────── */
+  .label-pill {
+    display: inline-block;
+    font-size: 0.68rem;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 99px;
+    border: 1px solid;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .step-indicator {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.75rem;
+    color: var(--dim);
+    margin-bottom: 10px;
+  }
+  .step-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--border);
+    transition: background 0.3s;
+  }
+  .step-dot.active-dot { background: var(--blue); }
+
+  /* animated connector arrow */
+  .connector {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--dim);
+    font-size: 1.2rem;
+    padding: 4px 0;
+    animation: bounce-h 1.5s ease infinite;
+  }
+  @keyframes bounce-h {
+    0%, 100% { transform: translateX(0); }
+    50%       { transform: translateX(4px); }
+  }
+
+  /* gradient overlay for token stream scroll */
+  .stream-wrap {
+    position: relative;
+    overflow: hidden;
+  }
+  .stream-wrap::after {
+    content: '';
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: 40px;
+    background: linear-gradient(to right, transparent, var(--bg2));
+    pointer-events: none;
+  }
+
+  /* pulse ring for active node */
+  .pulse-ring {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--teal);
+    position: relative;
+  }
+  .pulse-ring::after {
+    content: '';
+    position: absolute;
+    inset: -3px;
+    border-radius: 50%;
+    border: 2px solid var(--teal);
+    animation: ring-out 1.5s ease-out infinite;
+  }
+  @keyframes ring-out {
+    0%   { transform: scale(1); opacity: 1; }
+    100% { transform: scale(2.5); opacity: 0; }
+  }
+
+  /* step counter */
+  .step-counter {
+    font-size: 0.72rem;
+    color: var(--dim);
+    text-align: right;
+    margin-top: 10px;
+    font-family: monospace;
+  }
+
+  /* Loss epoch counter */
+  .epoch-label {
+    font-size: 0.72rem;
+    fill: var(--dim);
+  }
+
+  /* transition between stages */
+  .stage-panel {
+    animation: none;
+  }
+  .stage-panel.entering {
+    animation: fadeUp 0.35s ease both;
+  }
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(12px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* mini info row */
+  .info-row {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-top: 8px;
+  }
+  .info-chip {
+    font-size: 0.75rem;
+    color: var(--dim);
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .info-chip span { font-weight: 600; color: var(--text); }
+
+  /* stage 1 specific colors */
+  .s1 .stage-icon { background: var(--blue-bg); }
+  .s1 .stage-header-text h2 { color: var(--blue); }
+  .s1 .badge { border-color: var(--blue); color: var(--blue); }
+  .s1 .anim-card h3 { /* inherit */ }
+
+  /* stage 2 specific colors */
+  .s2 .stage-icon { background: var(--teal-bg); }
+  .s2 .stage-header-text h2 { color: var(--teal); }
+  .s2 .badge { border-color: var(--teal); color: var(--teal); }
+
+  /* stage 3 specific colors */
+  .s3 .stage-icon { background: var(--purple-bg); }
+  .s3 .stage-header-text h2 { color: var(--purple); }
+  .s3 .badge { border-color: var(--purple); color: var(--purple); }
+
+  /* scrollbar */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<!-- ══ HEADER ══════════════════════════════════════ -->
+<header>
+  <div>
+    <h1>LLM Training Stages</h1>
+    <p>Animated walkthrough of Pre-training, SFT, and RLHF</p>
+  </div>
+  <div id="progress-bar-wrap">
+    <div id="progress-track"><div id="progress-fill"></div></div>
+    <button id="btn-playpause">Pause</button>
+  </div>
+</header>
+
+<!-- ══ TABS ════════════════════════════════════════ -->
+<div class="tabs">
+  <div class="tab active" data-stage="0">Stage 1 &mdash; Pre-training</div>
+  <div class="tab" data-stage="1">Stage 2 &mdash; SFT</div>
+  <div class="tab" data-stage="2">Stage 3 &mdash; RLHF</div>
+</div>
+
+<!-- ══ CONTENT ═════════════════════════════════════ -->
+<div class="content">
+
+  <!-- ── STAGE 1: PRE-TRAINING ──────────────────── -->
+  <div class="stage-panel active s1" id="panel-0">
+    <div class="stage-header">
+      <div class="stage-icon">&#x1F4DA;</div>
+      <div class="stage-header-text">
+        <h2>Pre-training &mdash; Self-supervised Learning</h2>
+        <p>The model ingests trillions of raw text tokens from the internet, books, and code. It learns to predict the next token in a sequence, building up a rich internal representation of language with no human labels required.</p>
+        <div class="badge-row">
+          <span class="badge">Corpus</span>
+          <span class="badge">Tokenization</span>
+          <span class="badge">Next Token Prediction</span>
+          <span class="badge">Gradient Descent</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="anim-grid">
+      <!-- Token stream -->
+      <div class="anim-card">
+        <h3>Token Stream from Corpus</h3>
+        <div class="stream-wrap">
+          <div class="token-stream" id="token-stream"></div>
+        </div>
+        <div class="step-counter" id="token-counter">tokens: 0</div>
+      </div>
+
+      <!-- Transformer block -->
+      <div class="anim-card">
+        <h3>Transformer Block</h3>
+        <div class="transformer-block">
+          <svg viewBox="0 0 200 220" width="180" height="180">
+            <defs>
+              <filter id="glow">
+                <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
+                <feMerge><feMergeNode in="coloredBlur"/><feMergeNode in="SourceGraphic"/></feMerge>
+              </filter>
+            </defs>
+            <!-- Input embedding -->
+            <rect x="55" y="185" width="90" height="24" rx="5" fill="#1e3a5f" stroke="#3b82f6" stroke-width="1"/>
+            <text x="100" y="201" text-anchor="middle" fill="#3b82f6" font-size="9" font-family="system-ui">Input Embeddings</text>
+
+            <!-- Arrow up -->
+            <line x1="100" y1="183" x2="100" y2="163" stroke="#2e3248" stroke-width="1.5" marker-end="url(#arr)"/>
+
+            <!-- Self-attention -->
+            <rect x="40" y="138" width="120" height="24" rx="5" fill="#3b1f5e" stroke="#a855f7" stroke-width="1.5" id="attn-rect"/>
+            <text x="100" y="154" text-anchor="middle" fill="#a855f7" font-size="9" font-family="system-ui">Multi-Head Attention</text>
+
+            <!-- Arrow -->
+            <line x1="100" y1="136" x2="100" y2="116" stroke="#2e3248" stroke-width="1.5" marker-end="url(#arr)"/>
+
+            <!-- Add & Norm -->
+            <rect x="60" y="92" width="80" height="22" rx="5" fill="#252836" stroke="#2e3248" stroke-width="1"/>
+            <text x="100" y="107" text-anchor="middle" fill="#8892a4" font-size="9" font-family="system-ui">Add &amp; Norm</text>
+
+            <line x1="100" y1="90" x2="100" y2="72" stroke="#2e3248" stroke-width="1.5" marker-end="url(#arr)"/>
+
+            <!-- FFN -->
+            <rect x="40" y="48" width="120" height="22" rx="5" fill="#064e3b" stroke="#10b981" stroke-width="1.5" id="ffn-rect"/>
+            <text x="100" y="63" text-anchor="middle" fill="#10b981" font-size="9" font-family="system-ui">Feed-Forward Network</text>
+
+            <line x1="100" y1="46" x2="100" y2="28" stroke="#2e3248" stroke-width="1.5" marker-end="url(#arr)"/>
+
+            <!-- Output -->
+            <rect x="55" y="6" width="90" height="22" rx="5" fill="#083344" stroke="#06b6d4" stroke-width="1.5" id="out-rect"/>
+            <text x="100" y="21" text-anchor="middle" fill="#06b6d4" font-size="9" font-family="system-ui">Logits / Softmax</text>
+
+            <!-- Arrow marker -->
+            <defs>
+              <marker id="arr" markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto">
+                <path d="M0,0 L0,6 L6,3 z" fill="#2e3248"/>
+              </marker>
+            </defs>
+
+            <!-- Active layer indicator (animated) -->
+            <circle cx="168" cy="149" r="4" fill="#a855f7" id="attn-dot" opacity="0">
+              <animate attributeName="opacity" values="0;1;0" dur="2s" begin="0s" repeatCount="indefinite"/>
+            </circle>
+            <circle cx="168" cy="59" r="4" fill="#10b981" id="ffn-dot" opacity="0">
+              <animate attributeName="opacity" values="0;1;0" dur="2s" begin="1s" repeatCount="indefinite"/>
+            </circle>
+          </svg>
+        </div>
+      </div>
+
+      <!-- Next token prediction -->
+      <div class="anim-card">
+        <h3>Next Token Prediction</h3>
+        <div class="ntp-container" id="ntp-container">
+          <div class="step-indicator">
+            <div class="step-dot" id="ntp-d1"></div>
+            <div class="step-dot" id="ntp-d2"></div>
+            <div class="step-dot" id="ntp-d3"></div>
+            <span id="ntp-step-label">Selecting context...</span>
+          </div>
+          <div class="ntp-row">
+            <span class="ntp-label">Context</span>
+            <div class="ntp-tokens" id="ntp-context"></div>
+          </div>
+          <div class="ntp-row">
+            <span class="ntp-label">Masked</span>
+            <div class="ntp-tokens" id="ntp-masked"></div>
+          </div>
+          <div class="ntp-row">
+            <span class="ntp-label">Predicted</span>
+            <div class="ntp-tokens" id="ntp-pred"></div>
+          </div>
+          <div class="ntp-row">
+            <span class="ntp-label">Actual</span>
+            <div class="ntp-tokens" id="ntp-actual"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Loss curve -->
+      <div class="anim-card">
+        <h3>Training Loss</h3>
+        <div class="loss-curve-wrap">
+          <svg viewBox="0 0 300 140" preserveAspectRatio="none" id="loss-svg">
+            <defs>
+              <linearGradient id="lossGrad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="#3b82f6" stop-opacity="0.3"/>
+                <stop offset="100%" stop-color="#3b82f6" stop-opacity="0"/>
+              </linearGradient>
+            </defs>
+            <!-- Grid lines -->
+            <line x1="30" y1="10" x2="30" y2="115" stroke="#2e3248" stroke-width="1"/>
+            <line x1="30" y1="115" x2="295" y2="115" stroke="#2e3248" stroke-width="1"/>
+            <line x1="30" y1="40" x2="295" y2="40" stroke="#2e3248" stroke-width="0.5" stroke-dasharray="3,3"/>
+            <line x1="30" y1="75" x2="295" y2="75" stroke="#2e3248" stroke-width="0.5" stroke-dasharray="3,3"/>
+            <!-- Labels -->
+            <text x="5" y="14" fill="#8892a4" font-size="8" font-family="system-ui">High</text>
+            <text x="8" y="119" fill="#8892a4" font-size="8" font-family="system-ui">Low</text>
+            <text x="25" y="130" fill="#8892a4" font-size="8" font-family="system-ui">Steps</text>
+            <!-- Loss curve path (pre-computed smooth exponential decay) -->
+            <path class="loss-area" id="loss-area"
+              d="M30,12 C60,14 80,28 110,52 C140,68 170,88 200,98 C230,106 260,110 295,112 L295,115 L30,115 Z"/>
+            <path class="loss-path" id="loss-path"
+              d="M30,12 C60,14 80,28 110,52 C140,68 170,88 200,98 C230,106 260,110 295,112"/>
+            <!-- Moving dot on curve -->
+            <circle id="loss-dot" cx="30" cy="12" r="4" fill="#3b82f6" filter="url(#glow)">
+              <animateMotion dur="4s" repeatCount="indefinite" rotate="auto">
+                <mpath href="#loss-path-motion"/>
+              </animateMotion>
+            </circle>
+            <!-- Hidden path for animateMotion (same coords) -->
+            <path id="loss-path-motion" d="M30,12 C60,14 80,28 110,52 C140,68 170,88 200,98 C230,106 260,110 295,112" fill="none" stroke="none"/>
+            <!-- Epoch labels -->
+            <text x="85" y="130" fill="#8892a4" font-size="8" font-family="system-ui">Epoch 1</text>
+            <text x="175" y="130" fill="#8892a4" font-size="8" font-family="system-ui">Epoch 2</text>
+            <text x="255" y="130" fill="#8892a4" font-size="8" font-family="system-ui">Epoch 3</text>
+          </svg>
+        </div>
+        <div class="info-row">
+          <div class="info-chip"><span class="pulse-ring"></span> &nbsp;Training</div>
+          <div class="info-chip">Loss: <span id="live-loss">2.84</span></div>
+          <div class="info-chip">Step: <span id="live-step">0</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── STAGE 2: SFT ────────────────────────────── -->
+  <div class="stage-panel s2" id="panel-1">
+    <div class="stage-header">
+      <div class="stage-icon">&#x1F527;</div>
+      <div class="stage-header-text">
+        <h2>Supervised Fine-tuning (SFT)</h2>
+        <p>Human annotators create high-quality (instruction, response) pairs. The model is trained to maximize the probability of the correct response given an instruction, shifting its behavior toward being helpful and following directions.</p>
+        <div class="badge-row">
+          <span class="badge">Instruction</span>
+          <span class="badge">Target Response</span>
+          <span class="badge">Cross-entropy Loss</span>
+          <span class="badge">Fine-tuned Weights</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="anim-grid">
+      <!-- Instruction-response pairs -->
+      <div class="anim-card">
+        <h3>Instruction &rarr; Response Pairs</h3>
+        <div class="pair-flow" id="pair-flow"></div>
+      </div>
+
+      <!-- Data quality contrast -->
+      <div class="anim-card">
+        <h3>Data Quality: Raw vs. Curated</h3>
+        <div class="contrast-bars" id="contrast-bars">
+          <div class="contrast-row">
+            <span class="contrast-label">Pre-training<br><small style="color:var(--amber);font-size:0.65rem">Raw web data</small></span>
+            <div class="contrast-bar-track"><div class="contrast-bar-fill raw" id="bar-raw"></div></div>
+            <span class="contrast-val" id="val-raw">0%</span>
+          </div>
+          <div class="contrast-row">
+            <span class="contrast-label">SFT<br><small style="color:var(--teal);font-size:0.65rem">Curated pairs</small></span>
+            <div class="contrast-bar-track"><div class="contrast-bar-fill curated" id="bar-curated"></div></div>
+            <span class="contrast-val" id="val-curated">0%</span>
+          </div>
+        </div>
+        <div style="margin-top:14px;">
+          <div style="font-size:0.72rem;color:var(--dim);margin-bottom:8px;">Volume vs. Quality trade-off</div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;">
+            <div class="info-chip">Volume: <span style="color:var(--amber)">~1T tokens</span></div>
+            <div class="info-chip">SFT: <span style="color:var(--teal)">~100K pairs</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Weight update visualization -->
+      <div class="anim-card full">
+        <h3>Weight Update Visualization (Layer Sample)</h3>
+        <div style="font-size:0.75rem;color:var(--dim);margin-bottom:10px;">Cells light up as gradient descent adjusts weights toward instruction-following behavior</div>
+        <div class="weight-grid" id="weight-grid"></div>
+        <div style="display:flex;gap:16px;margin-top:10px;">
+          <div class="info-chip"><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:var(--bg3);border:1px solid var(--border);margin-right:4px;"></span>Unchanged</div>
+          <div class="info-chip"><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:var(--teal-bg);border:1px solid var(--teal);margin-right:4px;"></span>Activated</div>
+          <div class="info-chip"><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:var(--teal);border:1px solid var(--teal);margin-right:4px;"></span>Strong update</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── STAGE 3: RLHF ───────────────────────────── -->
+  <div class="stage-panel s3" id="panel-2">
+    <div class="stage-header">
+      <div class="stage-icon">&#x1F3AF;</div>
+      <div class="stage-header-text">
+        <h2>RLHF &mdash; Reinforcement Learning from Human Feedback</h2>
+        <p>Human raters compare model outputs and express preferences. A reward model learns to predict these preferences. The language model (policy) is then optimized using PPO to generate responses that earn higher reward scores, constrained by a KL penalty to prevent reward hacking.</p>
+        <div class="badge-row">
+          <span class="badge">Policy Model</span>
+          <span class="badge">Reward Model</span>
+          <span class="badge">Human Preference</span>
+          <span class="badge">PPO Update</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="anim-card full" style="margin-bottom:20px;">
+      <h3>RLHF Pipeline</h3>
+      <div class="rlhf-pipeline">
+        <!-- Step 1: Generation -->
+        <div class="rlhf-step" id="rlhf-step-1">
+          <div class="rlhf-step-title">1 &mdash; Generate Responses</div>
+          <div style="font-size:0.72rem;color:var(--dim);margin-bottom:8px;">Policy model produces multiple candidates for the same prompt</div>
+          <div style="font-size:0.75rem;color:var(--dim);margin-bottom:8px;font-style:italic;">"Explain recursion in simple terms"</div>
+          <div style="display:flex;flex-direction:column;gap:7px;" id="candidates"></div>
+        </div>
+
+        <!-- Step 2: Human rating -->
+        <div class="rlhf-step" id="rlhf-step-2">
+          <div class="rlhf-step-title">2 &mdash; Human Ranking</div>
+          <div style="font-size:0.72rem;color:var(--dim);margin-bottom:10px;">Annotators rank outputs by helpfulness, accuracy, and safety</div>
+          <div class="rater-area">
+            <div class="rater-icon">&#x1F9D1;</div>
+            <div style="font-size:0.72rem;color:var(--dim);">Human Rater</div>
+            <div class="pref-arrow">
+              <span class="thumb" id="thumb-up">&#x1F44D;</span>
+              <span style="font-size:0.65rem;">Response A &gt; B &gt; C</span>
+              <span class="thumb" id="thumb-down">&#x1F44E;</span>
+            </div>
+            <div style="width:100%;margin-top:6px;">
+              <div style="font-size:0.68rem;color:var(--dim);margin-bottom:4px;">Preference signal strength</div>
+              <div style="height:6px;background:var(--bg2);border-radius:99px;border:1px solid var(--border);overflow:hidden;">
+                <div id="pref-fill" style="height:100%;background:linear-gradient(90deg,var(--purple),var(--blue));border-radius:99px;width:0%;transition:width 1.5s ease;"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 3: Reward + PPO -->
+        <div class="rlhf-step" id="rlhf-step-3">
+          <div class="rlhf-step-title">3 &mdash; Reward Model &amp; PPO</div>
+          <div style="font-size:0.72rem;color:var(--dim);margin-bottom:8px;">Reward model scores outputs; PPO updates policy weights</div>
+          <div class="reward-bars" id="reward-bars">
+            <div class="reward-row">
+              <span class="reward-label">Response A</span>
+              <div class="reward-track"><div class="reward-fill high" id="r-a"></div></div>
+              <span class="reward-score" id="rs-a">+0.0</span>
+            </div>
+            <div class="reward-row">
+              <span class="reward-label">Response B</span>
+              <div class="reward-track"><div class="reward-fill mid" id="r-b"></div></div>
+              <span class="reward-score" id="rs-b">+0.0</span>
+            </div>
+            <div class="reward-row">
+              <span class="reward-label">Response C</span>
+              <div class="reward-track"><div class="reward-fill low" id="r-c"></div></div>
+              <span class="reward-score" id="rs-c">+0.0</span>
+            </div>
+          </div>
+          <div class="ppo-box" style="margin-top:10px;">
+            PPO Policy Update
+            <div class="kl-bar-wrap">
+              <div class="kl-label">KL Divergence Penalty</div>
+              <div class="kl-track"><div class="kl-fill" id="kl-fill"></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Policy improvement over iterations -->
+    <div class="anim-card full">
+      <h3>Policy Improvement over RLHF Iterations</h3>
+      <div style="display:flex;flex-direction:column;gap:8px;" id="policy-bars"></div>
+    </div>
+  </div>
+
+</div><!-- /content -->
+
+<script>
+// ── STATE ─────────────────────────────────────────
+let currentStage = 0;
+let paused = false;
+let globalTimer = null;
+let stageTimers = [];
+
+// ── TABS ──────────────────────────────────────────
+const tabs = document.querySelectorAll('.tab');
+const panels = document.querySelectorAll('.stage-panel');
+
+tabs.forEach(tab => {
+  tab.addEventListener('click', () => {
+    const s = parseInt(tab.dataset.stage);
+    switchStage(s);
+  });
+});
+
+function switchStage(s) {
+  clearAllTimers();
+  tabs.forEach((t, i) => t.classList.toggle('active', i === s));
+  panels.forEach((p, i) => {
+    p.classList.remove('active', 'entering');
+    if (i === s) {
+      p.classList.add('active');
+      void p.offsetWidth; // reflow
+      p.classList.add('entering');
+    }
+  });
+  currentStage = s;
+  updateProgress();
+  startStageAnimations(s);
+}
+
+// ── PROGRESS BAR ─────────────────────────────────
+function updateProgress() {
+  const pct = ((currentStage + 1) / 3) * 100;
+  document.getElementById('progress-fill').style.width = pct + '%';
+}
+updateProgress();
+
+// ── PLAY/PAUSE ────────────────────────────────────
+document.getElementById('btn-playpause').addEventListener('click', () => {
+  paused = !paused;
+  document.getElementById('btn-playpause').textContent = paused ? 'Play' : 'Pause';
+  if (!paused) startStageAnimations(currentStage);
+  else clearAllTimers();
+});
+
+function clearAllTimers() {
+  stageTimers.forEach(t => { clearTimeout(t); clearInterval(t); });
+  stageTimers = [];
+}
+
+function addTimer(fn, delay) {
+  const t = setTimeout(fn, delay);
+  stageTimers.push(t);
+  return t;
+}
+function addInterval(fn, delay) {
+  const t = setInterval(fn, delay);
+  stageTimers.push(t);
+  return t;
+}
+
+// ══════════════════════════════════════════════════
+// STAGE 1 ANIMATIONS
+// ══════════════════════════════════════════════════
+const corpusTokens = [
+  'The','quick','brown','fox','jumps','over','the','lazy','dog',
+  'Language','models','learn','by','predicting','tokens',
+  'Deep','learning','enables','powerful','text','generation',
+  'Attention','is','all','you','need','for','transformers',
+  'Self','supervised','training','on','massive','corpora',
+  'Neural','networks','approximate','complex','functions',
+];
+
+const ntpExamples = [
+  { ctx: ['The','Eiffel','Tower','is','located','in'], target: 'Paris' },
+  { ctx: ['def','fibonacci','(','n',')','return'], target: 'n' },
+  { ctx: ['The','patient','was','diagnosed','with'], target: 'diabetes' },
+  { ctx: ['Once','upon','a','time','in','a','land'], target: 'far' },
+  { ctx: ['The','loss','function','measures','the'], target: 'error' },
+];
+
+function startStage1() {
+  // --- Token stream ---
+  const streamEl = document.getElementById('token-stream');
+  const counterEl = document.getElementById('token-counter');
+  streamEl.innerHTML = '';
+  let tokenIdx = 0;
+  let tokenCount = 0;
+
+  function addToken() {
+    if (paused) return;
+    const t = document.createElement('div');
+    t.className = 'token flowing';
+    t.textContent = corpusTokens[tokenIdx % corpusTokens.length];
+    streamEl.appendChild(t);
+    tokenIdx++;
+    tokenCount++;
+    counterEl.textContent = 'tokens: ' + tokenCount.toLocaleString();
+    // keep max 24 visible
+    while (streamEl.children.length > 24) {
+      streamEl.removeChild(streamEl.firstChild);
+    }
+  }
+  addInterval(addToken, 350);
+
+  // --- Loss curve ---
+  addTimer(() => {
+    document.getElementById('loss-path').classList.add('drawn');
+    document.getElementById('loss-area').classList.add('drawn');
+  }, 400);
+
+  // Live loss counter
+  let lossVal = 2.84;
+  let stepVal = 0;
+  addInterval(() => {
+    if (paused) return;
+    lossVal = Math.max(0.82, lossVal - (Math.random() * 0.04 + 0.01));
+    stepVal += Math.floor(Math.random() * 50 + 30);
+    document.getElementById('live-loss').textContent = lossVal.toFixed(2);
+    document.getElementById('live-step').textContent = stepVal.toLocaleString();
+  }, 600);
+
+  // --- NTP animation ---
+  let ntpIdx = 0;
+  function runNTP() {
+    if (paused) return;
+    const ex = ntpExamples[ntpIdx % ntpExamples.length];
+    ntpIdx++;
+
+    // reset dots
+    ['ntp-d1','ntp-d2','ntp-d3'].forEach(id => {
+      document.getElementById(id).classList.remove('active-dot');
+    });
+    document.getElementById('ntp-context').innerHTML = '';
+    document.getElementById('ntp-masked').innerHTML = '';
+    document.getElementById('ntp-pred').innerHTML = '';
+    document.getElementById('ntp-actual').innerHTML = '';
+
+    // Step 1: show context
+    document.getElementById('ntp-d1').classList.add('active-dot');
+    document.getElementById('ntp-step-label').textContent = 'Loading context...';
+    ex.ctx.forEach((w, i) => {
+      addTimer(() => {
+        if (paused) return;
+        const tk = makeToken(w, 'highlight');
+        document.getElementById('ntp-context').appendChild(tk);
+      }, i * 100);
+    });
+
+    // Step 2: show mask
+    addTimer(() => {
+      if (paused) return;
+      document.getElementById('ntp-d1').classList.remove('active-dot');
+      document.getElementById('ntp-d2').classList.add('active-dot');
+      document.getElementById('ntp-step-label').textContent = 'Token masked...';
+      const mk = makeToken('???', 'masked');
+      document.getElementById('ntp-masked').appendChild(mk);
+    }, ex.ctx.length * 100 + 300);
+
+    // Step 3: prediction
+    addTimer(() => {
+      if (paused) return;
+      document.getElementById('ntp-d2').classList.remove('active-dot');
+      document.getElementById('ntp-d3').classList.add('active-dot');
+      document.getElementById('ntp-step-label').textContent = 'Predicting...';
+      const pd = makeToken(ex.target, 'predicted');
+      document.getElementById('ntp-pred').appendChild(pd);
+    }, ex.ctx.length * 100 + 900);
+
+    // Step 4: reveal actual
+    addTimer(() => {
+      if (paused) return;
+      document.getElementById('ntp-step-label').textContent = 'Revealed!';
+      const ac = makeToken(ex.target, 'highlight');
+      document.getElementById('ntp-actual').appendChild(ac);
+    }, ex.ctx.length * 100 + 1500);
+
+    // next NTP cycle
+    addTimer(runNTP, ex.ctx.length * 100 + 3200);
+  }
+  addTimer(runNTP, 600);
+}
+
+function makeToken(text, cls) {
+  const t = document.createElement('div');
+  t.className = 'token ' + (cls || '');
+  t.textContent = text;
+  return t;
+}
+
+// ══════════════════════════════════════════════════
+// STAGE 2 ANIMATIONS
+// ══════════════════════════════════════════════════
+const sftPairs = [
+  { inst: 'Summarize the following article in one sentence.', resp: 'The article discusses the impact of climate change on Arctic sea ice levels over the past decade.' },
+  { inst: 'Write a Python function to reverse a string.', resp: 'def reverse_string(s): return s[::-1]' },
+  { inst: 'Explain the concept of entropy in thermodynamics.', resp: 'Entropy measures the degree of disorder in a system; it always increases in isolated systems.' },
+  { inst: 'Translate "Good morning" to Spanish.', resp: '¡Buenos días!' },
+];
+
+function startStage2() {
+  // --- Instruction/response pairs ---
+  const pairFlow = document.getElementById('pair-flow');
+  pairFlow.innerHTML = '';
+  let pairIdx = 0;
+
+  function addPair() {
+    if (paused) return;
+    pairFlow.innerHTML = '';
+    const pair = sftPairs[pairIdx % sftPairs.length];
+    pairIdx++;
+
+    const iDiv = document.createElement('div');
+    iDiv.className = 'pair-item instruction';
+    iDiv.innerHTML = '<div class="pair-tag">Instruction</div>' + pair.inst;
+    pairFlow.appendChild(iDiv);
+    addTimer(() => iDiv.classList.add('visible'), 60);
+
+    addTimer(() => {
+      if (paused) return;
+      const rDiv = document.createElement('div');
+      rDiv.className = 'pair-item response';
+      rDiv.innerHTML = '<div class="pair-tag">Target Response</div>' + pair.resp;
+      pairFlow.appendChild(rDiv);
+      addTimer(() => rDiv.classList.add('visible'), 60);
+    }, 900);
+
+    addTimer(addPair, 4000);
+  }
+  addPair();
+
+  // --- Data quality bars ---
+  addTimer(() => {
+    const barRaw = document.getElementById('bar-raw');
+    const barCurated = document.getElementById('bar-curated');
+    const valRaw = document.getElementById('val-raw');
+    const valCurated = document.getElementById('val-curated');
+
+    // Raw: high volume, lower quality
+    barRaw.style.width = '92%';
+    valRaw.textContent = '92%';
+
+    addTimer(() => {
+      barCurated.style.width = '18%';
+      valCurated.textContent = '18%';
+    }, 500);
+  }, 400);
+
+  // --- Weight grid ---
+  const weightGrid = document.getElementById('weight-grid');
+  weightGrid.innerHTML = '';
+  const cells = [];
+  for (let i = 0; i < 80; i++) {
+    const c = document.createElement('div');
+    c.className = 'weight-cell';
+    weightGrid.appendChild(c);
+    cells.push(c);
+  }
+
+  function animateWeights() {
+    if (paused) return;
+    // reset some
+    cells.forEach(c => {
+      if (Math.random() < 0.15) {
+        c.classList.remove('activated', 'strong');
+      }
+    });
+    // activate new ones
+    const n = Math.floor(Math.random() * 8) + 4;
+    for (let i = 0; i < n; i++) {
+      const idx = Math.floor(Math.random() * cells.length);
+      cells[idx].classList.add(Math.random() > 0.5 ? 'strong' : 'activated');
+    }
+  }
+  addInterval(animateWeights, 400);
+}
+
+// ══════════════════════════════════════════════════
+// STAGE 3 ANIMATIONS
+// ══════════════════════════════════════════════════
+const responses = [
+  { label: 'A', text: 'Recursion is when a function calls itself. Like Russian dolls — each one opens to reveal a smaller one, until you reach the smallest.' },
+  { label: 'B', text: 'In computer science, recursion refers to a method where the solution to a problem depends on solutions to smaller instances of the same problem.' },
+  { label: 'C', text: 'Recursion = function(function(function(...)). It stops at base case.' },
+];
+
+function startStage3() {
+  // --- Candidates ---
+  const candEl = document.getElementById('candidates');
+  candEl.innerHTML = '';
+
+  responses.forEach((r, i) => {
+    const el = document.createElement('div');
+    el.className = 'response-candidate';
+    el.id = 'cand-' + r.label;
+    el.innerHTML = '<strong style="color:var(--purple);margin-right:6px;">' + r.label + '.</strong>' + r.text.slice(0, 55) + '...';
+    el.style.opacity = '0';
+    candEl.appendChild(el);
+    addTimer(() => { el.style.opacity = '1'; el.style.transition = 'opacity 0.3s'; }, i * 300 + 200);
+  });
+
+  // After generation, show rankings
+  addTimer(() => {
+    if (paused) return;
+    document.getElementById('rlhf-step-1').classList.add('active-step');
+    const ca = document.getElementById('cand-A');
+    const cb = document.getElementById('cand-B');
+    const cc = document.getElementById('cand-C');
+    if (ca) ca.classList.add('rank-1');
+    if (cb) cb.classList.add('rank-2');
+    if (cc) cc.classList.add('rank-3');
+
+    // Add rank badges
+    [['A','r1','#1 Best'],['B','r2','#2'],['C','r3','#3']].forEach(([l,cls,lbl]) => {
+      const bd = document.createElement('span');
+      bd.className = 'rank-badge ' + cls;
+      bd.textContent = lbl;
+      const el = document.getElementById('cand-' + l);
+      if (el) { el.style.position = 'relative'; el.appendChild(bd); }
+    });
+  }, 1200);
+
+  // Step 2: human rater
+  addTimer(() => {
+    if (paused) return;
+    document.getElementById('rlhf-step-1').classList.remove('active-step');
+    document.getElementById('rlhf-step-2').classList.add('active-step');
+    addTimer(() => { document.getElementById('thumb-up').classList.add('visible'); }, 400);
+    addTimer(() => { document.getElementById('thumb-down').classList.add('visible'); }, 800);
+    addTimer(() => { document.getElementById('pref-fill').style.width = '78%'; }, 600);
+  }, 2800);
+
+  // Step 3: reward model
+  addTimer(() => {
+    if (paused) return;
+    document.getElementById('rlhf-step-2').classList.remove('active-step');
+    document.getElementById('rlhf-step-3').classList.add('active-step');
+
+    addTimer(() => {
+      document.getElementById('r-a').style.width = '86%';
+      document.getElementById('rs-a').textContent = '+0.86';
+    }, 200);
+    addTimer(() => {
+      document.getElementById('r-b').style.width = '54%';
+      document.getElementById('rs-b').textContent = '+0.54';
+    }, 600);
+    addTimer(() => {
+      document.getElementById('r-c').style.width = '22%';
+      document.getElementById('rs-c').textContent = '+0.22';
+    }, 1000);
+    addTimer(() => {
+      document.getElementById('kl-fill').style.width = '35%';
+    }, 1400);
+  }, 5000);
+
+  // Repeat cycle
+  addTimer(() => {
+    resetRLHF();
+    addTimer(() => startStage3(), 800);
+  }, 12000);
+
+  // --- Policy improvement bars ---
+  const policyBars = document.getElementById('policy-bars');
+  policyBars.innerHTML = '';
+  const iterations = [
+    { label: 'SFT Baseline', pct: 38, color: 'var(--dim)' },
+    { label: 'RLHF Iter 1', pct: 55, color: 'var(--blue)' },
+    { label: 'RLHF Iter 2', pct: 68, color: 'var(--purple)' },
+    { label: 'RLHF Iter 3', pct: 79, color: 'var(--teal)' },
+    { label: 'RLHF Iter 4', pct: 87, color: 'var(--cyan)' },
+  ];
+  iterations.forEach((it, i) => {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;gap:10px;';
+    row.innerHTML = `
+      <span style="font-size:0.75rem;color:var(--dim);min-width:110px;">${it.label}</span>
+      <div style="flex:1;height:10px;background:var(--bg3);border-radius:99px;overflow:hidden;border:1px solid var(--border);">
+        <div class="iter-bar" style="height:100%;border-radius:99px;background:${it.color};width:0%;transition:width 1.2s ease ${i*0.2}s;"></div>
+      </div>
+      <span style="font-size:0.72rem;color:${it.color};min-width:36px;font-family:monospace;">${it.pct}%</span>
+    `;
+    policyBars.appendChild(row);
+  });
+  addTimer(() => {
+    policyBars.querySelectorAll('.iter-bar').forEach((b, i) => {
+      b.style.width = iterations[i].pct + '%';
+    });
+  }, 600);
+}
+
+function resetRLHF() {
+  document.getElementById('rlhf-step-1').classList.remove('active-step');
+  document.getElementById('rlhf-step-2').classList.remove('active-step');
+  document.getElementById('rlhf-step-3').classList.remove('active-step');
+  document.getElementById('thumb-up').classList.remove('visible');
+  document.getElementById('thumb-down').classList.remove('visible');
+  document.getElementById('pref-fill').style.width = '0%';
+  document.getElementById('r-a').style.width = '0%';
+  document.getElementById('r-b').style.width = '0%';
+  document.getElementById('r-c').style.width = '0%';
+  document.getElementById('rs-a').textContent = '+0.0';
+  document.getElementById('rs-b').textContent = '+0.0';
+  document.getElementById('rs-c').textContent = '+0.0';
+  document.getElementById('kl-fill').style.width = '0%';
+}
+
+// ── AUTO-ADVANCE ──────────────────────────────────
+const STAGE_DURATION = 18000; // 18 seconds per stage
+
+function startStageAnimations(s) {
+  clearAllTimers();
+  if (s === 0) startStage1();
+  else if (s === 1) startStage2();
+  else if (s === 2) startStage3();
+
+  // auto-advance after duration
+  if (!paused) {
+    addTimer(() => {
+      if (!paused) switchStage((s + 1) % 3);
+    }, STAGE_DURATION);
+  }
+}
+
+// ── INIT ─────────────────────────────────────────
+startStageAnimations(0);
+</script>
+</body>
+</html>
