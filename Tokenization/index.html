@@ -20,6 +20,17 @@
       <div class="badge">Conceptual Mode</div>
     </header>
 
+    <section class="info-bar" id="infoBar">
+      <button class="info-pill" id="modelPill">
+        <span class="info-pill-label">Model</span>
+        <span class="info-pill-value" id="modelName">Loading…</span>
+      </button>
+      <button class="info-pill" id="tokenizerPill">
+        <span class="info-pill-label">Tokenizer</span>
+        <span class="info-pill-value" id="tokenizerName">Loading…</span>
+      </button>
+    </section>
+
     <section class="panel">
       <div class="panel-header">
         <h2>1) Prompt</h2>
@@ -30,6 +41,7 @@
       </div>
       <textarea id="promptInput" rows="4" placeholder="Type your prompt here...">Write a short story about a lighthouse at dawn.</textarea>
       <div class="token-strip" id="promptTokens"></div>
+      <div id="tokenCount" class="token-count"></div>
       <div class="hint">Tokens are chunked pieces of text that the model consumes.</div>
     </section>
 
@@ -63,9 +75,15 @@
           <span>Max new tokens</span>
           <input id="maxTokens" type="number" min="1" max="40" value="18" />
         </label>
+        <label class="control">
+          <span>Auto speed</span>
+          <input id="speedSlider" type="range" min="150" max="2000" step="50" value="900" />
+          <span id="speedValue" class="mono">0.9s</span>
+        </label>
         <div class="panel-actions">
           <button id="stepBtn" class="btn primary">Generate Next Token</button>
           <button id="autoBtn" class="btn">Auto Play</button>
+          <button id="resetInferenceBtn" class="btn">Reset Inference</button>
         </div>
         <div class="hint">Higher temperature increases randomness; lower temperature is more focused.</div>
       </div>
@@ -74,6 +92,7 @@
     <section class="panel">
       <div class="panel-header">
         <h2>4) Token-by-Token Generation</h2>
+        <span id="generatedCount" class="token-count"></span>
       </div>
       <div class="generation">
         <div>
@@ -81,7 +100,13 @@
           <div id="generatedTokens" class="token-strip"></div>
         </div>
         <div>
-          <h3>Live Output</h3>
+          <div class="output-header">
+            <h3>Live Output</h3>
+            <label class="md-toggle">
+              <input type="checkbox" id="mdToggle" />
+              <span>Preview markdown</span>
+            </label>
+          </div>
           <div id="liveOutput" class="output"></div>
         </div>
       </div>
@@ -100,6 +125,17 @@
     Built for learning: conceptual math, intuitive UI, no external APIs.
   </footer>
 
+  <div class="modal-overlay" id="modalOverlay">
+    <div class="modal" id="modal">
+      <div class="modal-header">
+        <h2 id="modalTitle"></h2>
+        <button class="modal-close" id="modalClose">✕</button>
+      </div>
+      <div class="modal-body" id="modalBody"></div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

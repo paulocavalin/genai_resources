@@ -65,6 +65,7 @@ class StepRequest(BaseModel):
 
 class TokenizeResponse(BaseModel):
     tokens: List[str]
+    token_ids: List[int]
 
 
 class StepResponse(BaseModel):
@@ -73,6 +74,34 @@ class StepResponse(BaseModel):
     generated_tokens: List[str]
     top_probs: List[dict]
     eos: bool
+
+
+@app.get("/info")
+async def info():
+    num_params = sum(p.numel() for p in model.parameters())
+    special_tokens = {k: str(v) for k, v in tokenizer.special_tokens_map.items()}
+    return {
+        "model": {
+            "id": MODEL_ID,
+            "architecture": type(model).__name__,
+            "device": str(device),
+            "dtype": str(model.dtype).replace("torch.", ""),
+            "num_parameters": num_params,
+        },
+        "tokenizer": {
+            "class": type(tokenizer).__name__,
+            "vocab_size": tokenizer.vocab_size,
+            "model_max_length": tokenizer.model_max_length,
+            "special_tokens": special_tokens,
+        },
+    }
+
+
+@app.get("/vocab")
+async def vocab_endpoint():
+    vocab = tokenizer.get_vocab()
+    entries = sorted(vocab.items(), key=lambda x: x[1])
+    return {"vocab": [{"token": t, "id": i} for t, i in entries]}
 
 
 @app.get("/health")
@@ -101,7 +130,7 @@ async def tokenize_endpoint(payload: TokenizeRequest):
     )
     token_ids = encoded["input_ids"]
     tokens = tokenizer.convert_ids_to_tokens(token_ids)
-    return TokenizeResponse(tokens=tokens)
+    return TokenizeResponse(tokens=tokens, token_ids=token_ids)
 
 
 @app.post("/step", response_model=StepResponse)
