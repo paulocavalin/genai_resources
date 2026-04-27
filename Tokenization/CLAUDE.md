@@ -4,18 +4,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-Visual demo of LLM inference mechanics: tokenization, token-by-token generation, and top-k probability sampling. FastAPI backend loads a local Hugging Face model (default: `google/gemma-3-1b-it`); static HTML/CSS/JS frontend communicates with it directly.
+Visual demo of LLM inference mechanics: tokenization, token-by-token generation, and top-k probability sampling. FastAPI backend loads a local Hugging Face model (default: `google/gemma-4-E2B-it`); static HTML/CSS/JS frontend communicates with it directly.
 
 ## Setup & Running
 
 ```bash
-python -m venv .venv
+uv venv
 source .venv/bin/activate
-pip install -r requirements.txt
+uv pip install -r requirements.txt
 
-HF_TOKEN=your_hf_token python server.py
+HF_TOKEN=your_hf_token uv run server.py
 # Optional: override model
-MODEL_ID=google/gemma-3-1b-it HF_TOKEN=your_hf_token python server.py
+MODEL_ID=google/gemma-4-E4B-it HF_TOKEN=your_hf_token uv run server.py
 ```
 
 Open `index.html` directly in the browser (no build step). API runs on `http://localhost:8000`.

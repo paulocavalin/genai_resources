@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-MODEL_ID = os.getenv("MODEL_ID", "google/gemma-3-1b-it")
+MODEL_ID = os.getenv("MODEL_ID", "google/gemma-4-E2B-it")
 HF_TOKEN = os.getenv("HF_TOKEN")
 
 app = FastAPI()

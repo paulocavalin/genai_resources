@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Agentic Loop Explorer</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Agentic Loop Explorer</h1>
+      <p>Select a use case and watch system prompt, planning, tool calls, and final response unfold.</p>
+    </div>
+    <span class="badge" id="modelBadge">Model: loading...</span>
+  </header>
+
+  <div class="main">
+    <aside class="sidebar">
+      <h2>Use Cases</h2>
+      <div id="caseList" class="case-list"></div>
+    </aside>
+
+    <section class="flow-area">
+      <div class="flow-scroll" id="flowScroll">
+        <div class="empty-state">
+          <div class="empty-icon">👈</div>
+          <div class="empty-title">Pick a use case to begin</div>
+          <div class="empty-sub">Then click Play or Next to run the backend loop.</div>
+        </div>
+      </div>
+
+      <div class="controls">
+        <button class="btn" id="btnReset" disabled>Reset</button>
+        <button class="btn" id="btnPrev" disabled>Prev</button>
+        <button class="btn primary" id="btnPlay" disabled>Play</button>
+        <button class="btn" id="btnNext" disabled>Next</button>
+        <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+        <span class="step-counter" id="stepCounter">- / -</span>
+      </div>
+    </section>
+
+    <aside class="detail-panel">
+      <div class="tab-bar">
+        <button class="tab-btn active" data-tab="details">Details</button>
+        <button class="tab-btn" data-tab="raw">Raw API</button>
+      </div>
+      <div id="paneDetails" class="pane active">
+        <div id="detailContent" class="pane-content empty">Click a step card to inspect details.</div>
+      </div>
+      <div id="paneRaw" class="pane">
+        <div id="rawContent" class="pane-content empty">Click a step card to inspect payloads.</div>
+      </div>
+      <div class="legend">
+        <div><span class="dot system"></span>System</div>
+        <div><span class="dot user"></span>User</div>
+        <div><span class="dot planning"></span>Planning</div>
+        <div><span class="dot tool_call"></span>Tool Call</div>
+        <div><span class="dot tool_result"></span>Tool Result</div>
+        <div><span class="dot response"></span>Response</div>
+      </div>
+    </aside>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

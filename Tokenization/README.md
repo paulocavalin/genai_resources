@@ -19,26 +19,26 @@ A small, visual demo that shows how LLM inference works step‑by‑step:
 ## Prerequisites
 
 - Python 3.10+
-- A Hugging Face token with access to Gemma 3
+- A Hugging Face token with access to Gemma 4
 
 ## Setup
 
 ```bash
-python -m venv .venv
+uv venv
 source .venv/bin/activate
-pip install -r requirements.txt
+uv pip install -r requirements.txt
 ```
 
 ## Run the Backend
 
 ```bash
-HF_TOKEN=your_hf_token python server.py
+HF_TOKEN=your_hf_token uv run server.py
 ```
 
 You can override the model if desired:
 
 ```bash
-MODEL_ID=google/gemma-3-1b-it HF_TOKEN=your_hf_token python server.py
+MODEL_ID=google/gemma-4-E4B-it HF_TOKEN=your_hf_token uv run server.py
 ```
 
 The API runs on `http://localhost:8000`.
