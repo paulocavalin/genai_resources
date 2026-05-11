@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>AI Computational Design Pipeline</title>
-  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="styles.css?v=5" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 </head>
@@ -22,7 +22,7 @@
     </div>
     <div class="header-badges">
       <span class="badge">OpenSCAD</span>
-      <span class="badge">Ollama</span>
+      <span class="badge">HuggingFace</span>
       <span class="badge">3D Print</span>
     </div>
   </div>
@@ -33,6 +33,7 @@
   <div class="input-card">
     <h2>Describe your project</h2>
     <p class="input-hint">Describe what you want to build. Include purpose, rough size, and any constraints.</p>
+    <div id="prompt-history" class="prompt-history hidden"></div>
     <div class="input-row">
       <textarea id="description" rows="3" placeholder="e.g. A wall-mount holder for a Raspberry Pi 4 with ventilation slots, hidden cable routing, and a magnetic front cover. About 100×80×40mm, printed in PETG."></textarea>
     </div>
@@ -43,9 +44,16 @@
         <button class="example-btn" data-text="A parametric gear reduction box with two spur gears, 4:1 ratio, 3mm input shaft, 5mm output shaft. Must fit in a 60×60×40mm envelope.">Gear box</button>
         <button class="example-btn" data-text="A snap-fit enclosure for an Arduino Uno with access holes for USB and power jack, 4 M3 standoffs, and ventilation slots on both sides.">Arduino enclosure</button>
       </div>
-      <button id="design-btn" class="design-btn">
-        <span class="btn-icon">⬡</span> Design it
-      </button>
+      <div class="controls-row">
+        <div class="timeout-control">
+          <label for="timeout-input">Timeout (s)</label>
+          <input id="timeout-input" type="number" min="30" max="900" value="300" step="30" />
+        </div>
+        <span id="iteration-badge" class="iteration-badge hidden">Iteration 1</span>
+        <button id="design-btn" class="design-btn">
+          <span class="btn-icon">⬡</span> Run All
+        </button>
+      </div>
     </div>
   </div>
 </section>
@@ -72,6 +80,10 @@
         <div class="brief-grid" id="brief-grid"></div>
       </div>
     </div>
+    <div class="stage-prompt-row">
+      <input class="stage-subprompt" type="text" placeholder="Refine this stage (optional)…" data-stage="1" />
+      <button class="stage-retry-btn" title="Rerun from this stage">▶</button>
+    </div>
   </div>
 
   <!-- Stage 2: OpenSCAD Code -->
@@ -96,6 +108,10 @@
         </div>
         <pre><code id="scad-code" class="language-cpp"></code></pre>
       </div>
+    </div>
+    <div class="stage-prompt-row">
+      <input class="stage-subprompt" type="text" placeholder="Refine this stage (optional)…" data-stage="2" />
+      <button class="stage-retry-btn" title="Rerun from this stage">▶</button>
     </div>
   </div>
 
@@ -146,39 +162,17 @@
         </div>
       </div>
     </div>
+    <div class="stage-prompt-row">
+      <input class="stage-subprompt" type="text" placeholder="Refine this stage (optional)…" data-stage="3" />
+      <button class="stage-retry-btn" title="Rerun from this stage">▶</button>
+    </div>
   </div>
 
-  <!-- Stage 4: Optimize -->
+  <!-- Stage 4: Print Settings -->
   <div class="stage-card" id="stage-4" data-stage="4">
     <div class="stage-header">
       <div class="stage-meta">
         <span class="stage-num">04</span>
-        <span class="stage-icon">⚡</span>
-        <div>
-          <span class="stage-name">Printability Optimization</span>
-          <span class="stage-desc">Analyze overhangs, walls, tolerances</span>
-        </div>
-      </div>
-      <span class="stage-badge pending">Pending</span>
-    </div>
-    <div class="stage-body">
-      <div class="stage-placeholder">Waiting…</div>
-      <div class="stage-content hidden">
-        <div id="opt-issues" class="issues-list"></div>
-        <div id="opt-summary" class="opt-summary"></div>
-        <div class="code-toolbar" id="opt-code-toolbar">
-          <span class="code-lang">OpenSCAD — Optimized</span>
-        </div>
-        <pre><code id="opt-code" class="language-cpp"></code></pre>
-      </div>
-    </div>
-  </div>
-
-  <!-- Stage 5: Print Settings -->
-  <div class="stage-card" id="stage-5" data-stage="5">
-    <div class="stage-header">
-      <div class="stage-meta">
-        <span class="stage-num">05</span>
         <span class="stage-icon">📐</span>
         <div>
           <span class="stage-name">Print Settings</span>
@@ -194,13 +188,17 @@
         <div id="print-notes" class="print-notes"></div>
       </div>
     </div>
+    <div class="stage-prompt-row">
+      <input class="stage-subprompt" type="text" placeholder="Refine this stage (optional)…" data-stage="4" />
+      <button class="stage-retry-btn" title="Rerun from this stage">▶</button>
+    </div>
   </div>
 
-  <!-- Stage 6: BOM -->
-  <div class="stage-card" id="stage-6" data-stage="6">
+  <!-- Stage 5: BOM -->
+  <div class="stage-card" id="stage-5" data-stage="5">
     <div class="stage-header">
       <div class="stage-meta">
-        <span class="stage-num">06</span>
+        <span class="stage-num">05</span>
         <span class="stage-icon">🛒</span>
         <div>
           <span class="stage-name">BOM &amp; Parts Sourcing</span>
@@ -221,13 +219,17 @@
         <div id="bom-footer" class="bom-footer"></div>
       </div>
     </div>
+    <div class="stage-prompt-row">
+      <input class="stage-subprompt" type="text" placeholder="Refine this stage (optional)…" data-stage="5" />
+      <button class="stage-retry-btn" title="Rerun from this stage">▶</button>
+    </div>
   </div>
 
 </main>
 
 <!-- ── Footer ─────────────────────────────────────────────────────────────── -->
 <footer>
-  <p>AI Computational Design Pipeline · Ollama + OpenSCAD · port 8004</p>
+  <p>AI Computational Design Pipeline · HuggingFace + OpenSCAD · port 8004</p>
   <p class="footer-note">OpenSCAD code is generated by an LLM — always review before printing.</p>
 </footer>
 
@@ -239,6 +241,6 @@
   }
 }
 </script>
-<script type="module" src="app.js"></script>
+<script type="module" src="app.js?v=5"></script>
 </body>
 </html>

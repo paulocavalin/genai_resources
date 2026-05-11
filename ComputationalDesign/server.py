@@ -2,13 +2,12 @@
 ComputationalDesign/server.py
 AI-Driven Computational Design Pipeline — FastAPI backend on port 8004.
 
-6-stage agentic pipeline:
-  1  Brief          — extract structured spec from natural language
+5-stage agentic pipeline (iterative):
+  1  Brief          — extract/refine structured spec from natural language
   2  Model          — generate parametric OpenSCAD source code
   3  Render         — PNG preview + STL export via OpenSCAD CLI
-  4  Optimize       — printability analysis + revised code
-  5  Print Settings — slicer recommendations
-  6  BOM & Sourcing — bill of materials matched against parts catalog
+  4  Print Settings — slicer recommendations
+  5  BOM & Sourcing — bill of materials matched against parts catalog
 
 Run:
   uv run uvicorn server:app --port 8004 --reload
@@ -27,7 +26,7 @@ import uuid
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-import requests as _requests
+from huggingface_hub import InferenceClient
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, StreamingResponse
@@ -43,9 +42,15 @@ app.add_middleware(
 
 _STATIC = Path(__file__).parent
 
-OLLAMA_BASE = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-MODEL       = os.getenv("OLLAMA_MODEL", "gemma4:latest")
-TIMEOUT     = int(os.getenv("OLLAMA_TIMEOUT", "300"))
+HF_TOKEN = os.getenv("HF_TOKEN")
+MODEL    = os.getenv("MODEL_ID", "google/gemma-4-31B-it")
+PROVIDER = os.getenv("HF_PROVIDER", "novita")
+TIMEOUT  = int(os.getenv("HF_TIMEOUT", "300"))
+
+def _make_client(timeout: int = TIMEOUT) -> InferenceClient:
+    return InferenceClient(token=HF_TOKEN, provider=PROVIDER, timeout=timeout)
+
+hf_client = _make_client()
 
 # Design sessions: design_id → state dict
 DESIGNS: Dict[str, Dict] = {}
@@ -78,22 +83,21 @@ _CATALOG_BY_SKU = {p["sku"]: p for p in PARTS_CATALOG}
 
 # ── LLM helpers ───────────────────────────────────────────────────────────────
 
-def _llm(system: str, user: str, model: str = MODEL) -> str:
-    payload = {
-        "model": model,
-        "messages": [
+def _llm(system: str, user: str, model: str = MODEL, timeout: int = TIMEOUT) -> str:
+    client = _make_client(timeout) if timeout != TIMEOUT else hf_client
+    response = client.chat_completion(
+        model=model,
+        messages=[
             {"role": "system", "content": system},
             {"role": "user",   "content": user},
         ],
-        "stream": False,
-    }
-    resp = _requests.post(f"{OLLAMA_BASE}/api/chat", json=payload, timeout=TIMEOUT)
-    resp.raise_for_status()
-    return str(resp.json()["message"]["content"])
+        max_tokens=4096,
+    )
+    return str(response.choices[0].message.content)
 
 
-def _llm_json(system: str, user: str, model: str = MODEL) -> Any:
-    raw = _llm(system, user, model)
+def _llm_json(system: str, user: str, model: str = MODEL, timeout: int = TIMEOUT) -> Any:
+    raw = _llm(system, user, model, timeout)
     # Extract JSON from markdown fences or raw text
     for pattern in (
         r'```(?:json)?\s*(\{.*?\})\s*```',
@@ -113,7 +117,7 @@ def _llm_json(system: str, user: str, model: str = MODEL) -> Any:
 
 # ── Pipeline stage functions ──────────────────────────────────────────────────
 
-def stage_brief(description: str, model: str) -> Dict:
+def stage_brief(description: str, model: str, timeout: int = TIMEOUT) -> Dict:
     system = textwrap.dedent("""
         You are a product design engineer. Extract a structured design brief.
         Return ONLY a valid JSON object — no explanation, no markdown:
@@ -129,10 +133,10 @@ def stage_brief(description: str, model: str) -> Dict:
         Use realistic defaults when dimensions are not specified.
         Material must be one of: PLA, PETG, ABS, TPU.
     """).strip()
-    return _llm_json(system, f"Project description:\n{description}", model)
+    return _llm_json(system, f"Project description:\n{description}", model, timeout)
 
 
-def stage_generate_scad(brief: Dict, model: str) -> str:
+def stage_generate_scad(brief: Dict, model: str, timeout: int = TIMEOUT, extra_prompt: str = "") -> str:
     system = textwrap.dedent("""
         You are a parametric CAD engineer expert in OpenSCAD.
         Generate a complete, working OpenSCAD script for the design brief.
@@ -145,7 +149,10 @@ def stage_generate_scad(brief: Dict, model: str) -> str:
         - Real geometry — no placeholder comments like "// add feature here"
         - Return ONLY the raw OpenSCAD code. No explanations. No markdown fences.
     """).strip()
-    raw = _llm(system, f"Design brief:\n{json.dumps(brief, indent=2, ensure_ascii=False)}", model)
+    user_msg = f"Design brief:\n{json.dumps(brief, indent=2, ensure_ascii=False)}"
+    if extra_prompt:
+        user_msg += f"\n\nAdditional guidance: {extra_prompt}"
+    raw = _llm(system, user_msg, model, timeout)
     # Strip any accidental markdown fences
     raw = re.sub(r'^```[a-z]*\s*', '', raw.strip(), flags=re.MULTILINE)
     raw = re.sub(r'```\s*$', '', raw.strip(), flags=re.MULTILINE)
@@ -208,36 +215,7 @@ def stage_render(scad_code: str, design_id: str) -> Dict:
     return result
 
 
-def stage_optimize(scad_code: str, brief: Dict, model: str) -> Dict:
-    system = textwrap.dedent("""
-        You are a 3D printing specialist and FDM design engineer.
-        Analyze the OpenSCAD code for printability issues and optimize it.
-
-        Return ONLY a valid JSON object:
-        {
-          "issues": [
-            {"severity": "high|medium|low", "description": "...", "fix": "..."}
-          ],
-          "optimized_code": "// full revised OpenSCAD code here",
-          "summary": "brief paragraph describing changes made"
-        }
-
-        Check for:
-        - Overhangs exceeding 45° (require supports)
-        - Wall thickness < 1.2mm (too thin for FDM)
-        - Features < 0.4mm (below nozzle diameter)
-        - Missing fit tolerances for assembly (0.2mm gap)
-        - Material reduction opportunities (wall instead of solid, chamfers)
-        - Layer line direction vs. stress direction
-    """).strip()
-    user = (
-        f"Brief:\n{json.dumps(brief, indent=2, ensure_ascii=False)}\n\n"
-        f"OpenSCAD code:\n```\n{scad_code[:3000]}\n```"
-    )
-    return _llm_json(system, user, model)
-
-
-def stage_print_settings(brief: Dict, code: str, model: str) -> Dict:
+def stage_print_settings(brief: Dict, code: str, model: str, timeout: int = TIMEOUT, extra_prompt: str = "") -> Dict:
     system = textwrap.dedent("""
         You are a 3D printing specialist. Recommend slicer settings.
         Return ONLY a valid JSON object:
@@ -263,10 +241,12 @@ def stage_print_settings(brief: Dict, code: str, model: str) -> Dict:
         }
     """).strip()
     user = f"Design brief:\n{json.dumps(brief, indent=2, ensure_ascii=False)}"
-    return _llm_json(system, user, model)
+    if extra_prompt:
+        user += f"\n\nAdditional guidance: {extra_prompt}"
+    return _llm_json(system, user, model, timeout)
 
 
-def stage_source_parts(brief: Dict, model: str) -> Dict:
+def stage_source_parts(brief: Dict, model: str, timeout: int = TIMEOUT, extra_prompt: str = "") -> Dict:
     catalog_summary = "\n".join(
         f"  {p['sku']}: {p['name']} — {p['unit']} @ R${p['price_brl']:.2f}"
         for p in PARTS_CATALOG
@@ -298,7 +278,9 @@ def stage_source_parts(brief: Dict, model: str) -> Dict:
         Estimate quantities realistically.
     """).strip()
     user = f"Design brief (hardware field is key):\n{json.dumps(brief, indent=2, ensure_ascii=False)}"
-    result = _llm_json(system, user, model)
+    if extra_prompt:
+        user += f"\n\nAdditional guidance: {extra_prompt}"
+    result = _llm_json(system, user, model, timeout)
 
     # Enrich BOM entries with real catalog data
     for item in result.get("bom", []):
@@ -314,31 +296,35 @@ def stage_source_parts(brief: Dict, model: str) -> Dict:
 
 # ── Pipeline runner (async) ───────────────────────────────────────────────────
 
-async def _run_pipeline(design_id: str, description: str, model: str) -> None:
+
+async def _run_pipeline(design_id: str, description: str, model: str, timeout: int = TIMEOUT) -> None:
     queue: asyncio.Queue = DESIGNS[design_id]["queue"]
+    sp = DESIGNS[design_id].get("stage_prompts", {})
 
     async def emit(data: Dict) -> None:
         await queue.put(data)
 
-    async def run(fn, *args):
-        return await asyncio.to_thread(fn, *args)
-
     try:
         # Stage 1
         await emit({"stage": 1, "status": "running"})
-        brief = await run(stage_brief, description, model)
+        desc = description
+        if sp.get(1):
+            desc += f"\n\nAdditional guidance: {sp[1]}"
+        brief = await asyncio.to_thread(stage_brief, desc, model, timeout)
         DESIGNS[design_id]["brief"] = brief
         await emit({"stage": 1, "status": "done", "data": brief})
 
         # Stage 2
         await emit({"stage": 2, "status": "running"})
-        scad_code = await run(stage_generate_scad, brief, model)
+        scad_code = await asyncio.to_thread(
+            stage_generate_scad, brief, model, timeout, sp.get(2, "")
+        )
         DESIGNS[design_id]["scad_code"] = scad_code
         await emit({"stage": 2, "status": "done", "data": {"scad_code": scad_code}})
 
         # Stage 3
         await emit({"stage": 3, "status": "running"})
-        render = await run(stage_render, scad_code, design_id)
+        render = await asyncio.to_thread(stage_render, scad_code, design_id)
         DESIGNS[design_id]["render"] = render
         await emit({"stage": 3, "status": "done", "data": {
             "has_png":             render["png_path"] is not None,
@@ -347,26 +333,21 @@ async def _run_pipeline(design_id: str, description: str, model: str) -> None:
             "render_error":        render.get("render_error"),
         }})
 
-        # Stage 4
+        # Stage 4 — Print Settings
         await emit({"stage": 4, "status": "running"})
-        opt = await run(stage_optimize, scad_code, brief, model)
-        DESIGNS[design_id]["optimized"] = opt
-        await emit({"stage": 4, "status": "done", "data": opt})
-
-        # Stage 5
-        await emit({"stage": 5, "status": "running"})
-        settings = await run(
-            stage_print_settings, brief,
-            opt.get("optimized_code", scad_code), model
+        settings = await asyncio.to_thread(
+            stage_print_settings, brief, scad_code, model, timeout, sp.get(4, "")
         )
         DESIGNS[design_id]["print_settings"] = settings
-        await emit({"stage": 5, "status": "done", "data": settings})
+        await emit({"stage": 4, "status": "done", "data": settings})
 
-        # Stage 6
-        await emit({"stage": 6, "status": "running"})
-        bom = await run(stage_source_parts, brief, model)
+        # Stage 5 — BOM
+        await emit({"stage": 5, "status": "running"})
+        bom = await asyncio.to_thread(
+            stage_source_parts, brief, model, timeout, sp.get(5, "")
+        )
         DESIGNS[design_id]["bom"] = bom
-        await emit({"stage": 6, "status": "done", "data": bom})
+        await emit({"stage": 5, "status": "done", "data": bom})
 
         DESIGNS[design_id]["status"] = "complete"
         await emit({"type": "complete"})
@@ -377,11 +358,12 @@ async def _run_pipeline(design_id: str, description: str, model: str) -> None:
         await emit({"type": "error", "message": str(exc)})
 
 
-# ── Request model ─────────────────────────────────────────────────────────────
+# ── Request models ────────────────────────────────────────────────────────────
 
 class DesignRequest(BaseModel):
     description: str
     model: Optional[str] = None
+    timeout: Optional[int] = None
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
@@ -407,9 +389,14 @@ async def start_design(req: DesignRequest):
     DESIGNS[design_id] = {
         "status":      "running",
         "description": req.description,
+        "iterations":  [],
         "queue":       asyncio.Queue(),
     }
-    asyncio.create_task(_run_pipeline(design_id, req.description, req.model or MODEL))
+    asyncio.create_task(_run_pipeline(
+        design_id, req.description,
+        req.model or MODEL,
+        req.timeout or TIMEOUT,
+    ))
     return {"id": design_id}
 
 
@@ -432,6 +419,132 @@ async def stream_design(design_id: str):
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+# ── Per-stage retry ───────────────────────────────────────────────────────────
+
+class StageRetryRequest(BaseModel):
+    prompt: Optional[str] = None
+    model: Optional[str] = None
+    timeout: Optional[int] = None
+
+
+@app.post("/design/{design_id}/stage/{stage_num}")
+async def retry_stage(design_id: str, stage_num: int, req: Optional[StageRetryRequest] = None):
+    if design_id not in DESIGNS:
+        raise HTTPException(404, "Design not found")
+    if stage_num < 1 or stage_num > 5:
+        raise HTTPException(400, "Stage must be 1-5")
+
+    if req is None:
+        req = StageRetryRequest()
+
+    d = DESIGNS[design_id]
+    d["queue"] = asyncio.Queue()
+    d["status"] = "running"
+
+    timeout = req.timeout or TIMEOUT
+    model = req.model or MODEL
+
+    # Store the sub-prompt for this stage
+    stage_prompts = d.setdefault("stage_prompts", {})
+    if req.prompt:
+        stage_prompts[stage_num] = req.prompt
+
+    async def run_single():
+        queue = d["queue"]
+        sp = d.get("stage_prompts", {})
+        try:
+            # Run the retried stage and all subsequent stages
+            stages_to_run = range(stage_num, 6)  # stage_num through 5
+            for sn in stages_to_run:
+                await queue.put({"stage": sn, "status": "running"})
+                extra = sp.get(sn, "")
+
+                if sn == 1:
+                    desc = d.get("_current_prompt") or d["description"]
+                    if extra:
+                        desc += f"\n\nAdditional guidance: {extra}"
+                    brief = await asyncio.to_thread(stage_brief, desc, model, timeout)
+                    d["brief"] = brief
+                    await queue.put({"stage": 1, "status": "done", "data": brief})
+                elif sn == 2:
+                    scad_code = await asyncio.to_thread(
+                        stage_generate_scad, d["brief"], model, timeout, extra
+                    )
+                    d["scad_code"] = scad_code
+                    await queue.put({"stage": 2, "status": "done", "data": {"scad_code": scad_code}})
+                elif sn == 3:
+                    render = await asyncio.to_thread(stage_render, d["scad_code"], design_id)
+                    d["render"] = render
+                    await queue.put({"stage": 3, "status": "done", "data": {
+                        "has_png": render["png_path"] is not None,
+                        "has_stl": render["stl_path"] is not None,
+                        "openscad_available": render["openscad_available"],
+                        "render_error": render.get("render_error"),
+                    }})
+                elif sn == 4:
+                    code = d.get("scad_code", "")
+                    settings = await asyncio.to_thread(
+                        stage_print_settings, d["brief"], code, model, timeout, extra
+                    )
+                    d["print_settings"] = settings
+                    await queue.put({"stage": 4, "status": "done", "data": settings})
+                elif sn == 5:
+                    bom = await asyncio.to_thread(
+                        stage_source_parts, d["brief"], model, timeout, extra
+                    )
+                    d["bom"] = bom
+                    await queue.put({"stage": 5, "status": "done", "data": bom})
+
+            await queue.put({"type": "complete"})
+        except Exception as exc:
+            await queue.put({"stage": sn, "status": "error", "data": {"message": str(exc)}})
+            await queue.put({"type": "error", "message": str(exc)})
+
+    asyncio.create_task(run_single())
+    return {"id": design_id, "stage": stage_num}
+
+
+# ── Iterative Refinement ──────────────────────────────────────────────────────
+
+class RefineRequest(BaseModel):
+    prompt: str
+    model: Optional[str] = None
+    timeout: Optional[int] = None
+
+
+@app.post("/design/{design_id}/refine")
+async def refine_design(design_id: str, req: RefineRequest):
+    if design_id not in DESIGNS:
+        raise HTTPException(404, "Design not found")
+
+    d = DESIGNS[design_id]
+    # Append the refinement to history
+    iterations = d.setdefault("iterations", [])
+    iterations.append({
+        "prompt": req.prompt,
+        "previous_brief": d.get("brief"),
+    })
+
+    # Build context-aware description for stage_brief
+    history_context = f"Original description: {d['description']}\n\n"
+    for i, it in enumerate(iterations, 1):
+        history_context += f"Refinement #{i}: {it['prompt']}\n"
+    if d.get("brief"):
+        history_context += f"\nPrevious design brief:\n{json.dumps(d['brief'], indent=2, ensure_ascii=False)}\n"
+    history_context += f"\nLatest refinement request: {req.prompt}\nUpdate the design brief to incorporate this change while keeping previous decisions intact."
+
+    d["_current_prompt"] = history_context
+    d["queue"] = asyncio.Queue()
+    d["status"] = "running"
+
+    asyncio.create_task(_run_pipeline(
+        design_id, history_context,
+        req.model or MODEL,
+        req.timeout or TIMEOUT,
+    ))
+    return {"id": design_id, "iteration": len(iterations)}
 
 
 @app.get("/design/{design_id}/png")

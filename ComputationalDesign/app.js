@@ -9,6 +9,39 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 const API = 'http://localhost:8004';
 
+// Track active design, iteration count, stage timers, and prompt history
+let _currentDesignId = null;
+let _iterationCount = 0;
+const _stageTimers = {};  // stage -> intervalId
+const _promptHistory = []; // array of prompt strings
+
+function getTimeout() {
+  const input = document.getElementById('timeout-input');
+  return parseInt(input.value, 10) || 300;
+}
+
+function addToHistory(prompt) {
+  _promptHistory.push(prompt);
+  renderHistory();
+}
+
+function renderHistory() {
+  const container = document.getElementById('prompt-history');
+  if (_promptHistory.length === 0) {
+    container.classList.add('hidden');
+    return;
+  }
+  container.classList.remove('hidden');
+  container.innerHTML = _promptHistory.map((text, i) => {
+    const label = i === 0 ? 'Original' : `Refinement #${i}`;
+    return `<div class="prompt-entry">
+      <span class="prompt-label">${label}</span>
+      <span class="prompt-text">${esc(text)}</span>
+    </div>`;
+  }).join('');
+  container.scrollTop = container.scrollHeight;
+}
+
 // ── Example buttons ──────────────────────────────────────────────────────────
 
 document.querySelectorAll('.example-btn').forEach(btn => {
@@ -36,30 +69,118 @@ async function startPipeline() {
   document.getElementById('pipeline').classList.remove('hidden');
   document.getElementById('pipeline').scrollIntoView({ behavior: 'smooth', block: 'start' });
 
+  // Immediately show stage 1 as running (before SSE connects)
+  updateStage(1, 'running', null, null);
+
+  // Record this prompt in the visible history
+  addToHistory(description);
+
   try {
-    const res = await fetch(`${API}/design`, {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ description }),
-    });
-    const { id } = await res.json();
-    listenToStream(id);
+    // If we already have a design, this is a refinement
+    if (_currentDesignId && _iterationCount > 0) {
+      const res = await fetch(`${API}/design/${_currentDesignId}/refine`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ prompt: description, timeout: getTimeout() }),
+      });
+      if (!res.ok) throw new Error(`Server returned ${res.status}`);
+      await res.json();
+      listenToStream(_currentDesignId);
+    } else {
+      const res = await fetch(`${API}/design`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ description, timeout: getTimeout() }),
+      });
+      const { id } = await res.json();
+      _currentDesignId = id;
+      _iterationCount = 0;
+      updateIterationBadge();
+      listenToStream(id);
+    }
   } catch (err) {
     btn.disabled = false;
-    btn.innerHTML = '<span class="btn-icon">⬡</span> Design it';
+    btn.innerHTML = '<span class="btn-icon">⬡</span> Run All';
     alert(`Could not connect to the server: ${err.message}`);
+  }
+}
+
+function updateIterationBadge() {
+  const badge = document.getElementById('iteration-badge');
+  if (_iterationCount > 0) {
+    badge.textContent = `Iteration ${_iterationCount}`;
+    badge.classList.remove('hidden');
+  } else {
+    badge.classList.add('hidden');
+  }
+}
+
+// ── Retry buttons ─────────────────────────────────────────────────────────────
+
+document.querySelectorAll('.stage-retry-btn').forEach((btn, idx) => {
+  btn.addEventListener('click', () => retryStage(idx + 1));
+});
+
+async function retryStage(stageNum) {
+  if (!_currentDesignId) return;
+  const card = document.getElementById(`stage-${stageNum}`);
+  const subpromptInput = card.querySelector('.stage-subprompt');
+  const subprompt = subpromptInput ? subpromptInput.value.trim() : '';
+
+  // Reset this stage and all subsequent stages visually
+  for (let i = stageNum; i <= 5; i++) {
+    const c = document.getElementById(`stage-${i}`);
+    c.classList.remove('done', 'error');
+    c.querySelector('.stage-placeholder').classList.remove('hidden');
+    c.querySelector('.stage-placeholder').textContent = 'Waiting…';
+    c.querySelector('.stage-content').classList.add('hidden');
+    c.querySelector('.stage-retry-btn').disabled = true;
+    setBadge(i, 'pending', 'Pending');
+  }
+
+  card.classList.add('running');
+  setBadge(stageNum, 'running', 'Running');
+  card.querySelector('.stage-placeholder').innerHTML = '<span class="spin">⬡</span> Processing…';
+  startStageTimer(stageNum);
+
+  const btn = document.getElementById('design-btn');
+  btn.disabled = true;
+  btn.textContent = '⬡ Designing…';
+
+  try {
+    const body = { timeout: getTimeout() };
+    if (subprompt) body.prompt = subprompt;
+    const res = await fetch(`${API}/design/${_currentDesignId}/stage/${stageNum}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(`Server returned ${res.status}: ${await res.text()}`);
+    listenToStream(_currentDesignId);
+  } catch (err) {
+    stopStageTimer(stageNum);
+    card.classList.remove('running');
+    card.classList.add('error');
+    setBadge(stageNum, 'error', 'Error');
+    card.querySelector('.stage-placeholder').textContent = `Error: ${err.message}`;
+    card.querySelector('.stage-retry-btn').disabled = false;
+    btn.disabled = false;
+    btn.innerHTML = '<span class="btn-icon">⬡</span> Refine';
   }
 }
 
 // ── Pipeline reset ────────────────────────────────────────────────────────────
 
 function resetPipeline() {
-  for (let i = 1; i <= 6; i++) {
+  for (let i = 1; i <= 5; i++) {
+    stopStageTimer(i);
     const card = document.getElementById(`stage-${i}`);
     card.className = 'stage-card';
     setBadge(i, 'pending', 'Pending');
     card.querySelector('.stage-placeholder').classList.remove('hidden');
+    card.querySelector('.stage-placeholder').textContent = 'Waiting…';
     card.querySelector('.stage-content').classList.add('hidden');
+    card.querySelector('.stage-retry-btn').disabled = true;
   }
   // Clear stage 3 viewer
   const wrap = document.getElementById('stl-canvas-wrap');
@@ -67,6 +188,34 @@ function resetPipeline() {
   document.getElementById('stl-loading').classList.remove('hidden');
   document.getElementById('stl-unavailable').classList.add('hidden');
   _stlRendered = false;
+}
+
+// ── Elapsed timer ─────────────────────────────────────────────────────────────
+
+function formatElapsed(seconds) {
+  if (seconds < 60) return `${seconds}s`;
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}m ${s.toString().padStart(2, '0')}s`;
+}
+
+function startStageTimer(stage) {
+  stopStageTimer(stage);
+  const startTime = Date.now();
+  const card = document.getElementById(`stage-${stage}`);
+  const placeholder = card.querySelector('.stage-placeholder');
+
+  _stageTimers[stage] = setInterval(() => {
+    const elapsed = Math.floor((Date.now() - startTime) / 1000);
+    placeholder.innerHTML = `<span class="spin">⬡</span> Processing… ${formatElapsed(elapsed)}`;
+  }, 1000);
+}
+
+function stopStageTimer(stage) {
+  if (_stageTimers[stage]) {
+    clearInterval(_stageTimers[stage]);
+    delete _stageTimers[stage];
+  }
 }
 
 // ── SSE stream handler ────────────────────────────────────────────────────────
@@ -81,7 +230,13 @@ function listenToStream(designId) {
       es.close();
       const btn = document.getElementById('design-btn');
       btn.disabled = false;
-      btn.innerHTML = '<span class="btn-icon">⬡</span> Design it';
+      btn.innerHTML = '<span class="btn-icon">⬡</span> Refine';
+      // Update textarea for refinement
+      const textarea = document.getElementById('description');
+      textarea.value = '';
+      textarea.placeholder = 'Describe how to refine the design (e.g. "make it taller", "add ventilation slots")…';
+      _iterationCount++;
+      updateIterationBadge();
       return;
     }
 
@@ -89,32 +244,33 @@ function listenToStream(designId) {
       es.close();
       const btn = document.getElementById('design-btn');
       btn.disabled = false;
-      btn.innerHTML = '<span class="btn-icon">⬡</span> Design it';
-      console.error('Pipeline error:', event.message);
+      btn.innerHTML = '<span class="btn-icon">⬡</span> Run All';
       showError(event.message);
       return;
     }
 
     const { stage, status, data } = event;
-    updateStage(stage, status, data, designId);
+    if (stage) updateStage(stage, status, data, designId);
   };
 
   es.onerror = () => {
     es.close();
     const btn = document.getElementById('design-btn');
     btn.disabled = false;
-    btn.innerHTML = '<span class="btn-icon">⬡</span> Design it';
+    btn.innerHTML = '<span class="btn-icon">⬡</span> Run All';
   };
 }
 
 function showError(message) {
-  for (let i = 1; i <= 6; i++) {
+  for (let i = 1; i <= 5; i++) {
     const card = document.getElementById(`stage-${i}`);
     if (card.classList.contains('running')) {
+      stopStageTimer(i);
       setBadge(i, 'error', 'Error');
       card.classList.remove('running');
       card.classList.add('error');
       card.querySelector('.stage-placeholder').textContent = `Error: ${message}`;
+      card.querySelector('.stage-retry-btn').disabled = false;
     }
   }
 }
@@ -123,30 +279,45 @@ function showError(message) {
 
 function updateStage(stage, status, data, designId) {
   const card = document.getElementById(`stage-${stage}`);
+  const retryBtn = card.querySelector('.stage-retry-btn');
 
   if (status === 'running') {
     card.classList.add('running');
     setBadge(stage, 'running', 'Running');
-    card.querySelector('.stage-placeholder').innerHTML =
-      '<span class="spin">⬡</span> Processing…';
+    retryBtn.disabled = true;
+    if (!_stageTimers[stage]) {
+      card.querySelector('.stage-placeholder').innerHTML =
+        '<span class="spin">⬡</span> Processing… 0s';
+      startStageTimer(stage);
+    }
     return;
   }
 
   if (status === 'done') {
+    stopStageTimer(stage);
     card.classList.remove('running');
     card.classList.add('done');
     setBadge(stage, 'done', 'Done');
     card.querySelector('.stage-placeholder').classList.add('hidden');
     card.querySelector('.stage-content').classList.remove('hidden');
+    retryBtn.disabled = false;
 
     switch (stage) {
       case 1: renderBrief(data);                    break;
       case 2: renderCode(data, designId);           break;
       case 3: renderPreview(data, designId);        break;
-      case 4: renderOptimize(data);                 break;
-      case 5: renderPrintSettings(data);            break;
-      case 6: renderBOM(data);                      break;
+      case 4: renderPrintSettings(data);            break;
+      case 5: renderBOM(data);                      break;
     }
+  }
+
+  if (status === 'error') {
+    stopStageTimer(stage);
+    card.classList.remove('running');
+    card.classList.add('error');
+    setBadge(stage, 'error', 'Error');
+    card.querySelector('.stage-placeholder').textContent = `Error: ${data?.message || 'Unknown error'}`;
+    retryBtn.disabled = false;
   }
 }
 
@@ -348,47 +519,7 @@ function initSTLViewer(stlUrl) {
   resizeObs.observe(container.parentElement);
 }
 
-// ── Stage 4: Optimization ─────────────────────────────────────────────────────
-
-function renderOptimize(data) {
-  // Issues
-  const issuesList = document.getElementById('opt-issues');
-  issuesList.innerHTML = '';
-  (data.issues || []).forEach(issue => {
-    const sev = (issue.severity || 'low').toLowerCase();
-    const item = el('div', `issue-item ${sev}`);
-    item.innerHTML = `
-      <div>
-        <span class="issue-sev">${sev}</span>
-      </div>
-      <div class="issue-text">
-        <div>${esc(issue.description)}</div>
-        ${issue.fix ? `<div class="issue-fix">→ ${esc(issue.fix)}</div>` : ''}
-      </div>
-    `;
-    issuesList.appendChild(item);
-  });
-
-  if (!data.issues?.length) {
-    issuesList.innerHTML = '<div class="opt-summary" style="border-color:var(--green)">✅ No printability issues found.</div>';
-  }
-
-  // Summary
-  if (data.summary) {
-    document.getElementById('opt-summary').textContent = data.summary;
-  }
-
-  // Optimized code
-  const code = document.getElementById('opt-code');
-  if (data.optimized_code) {
-    code.textContent = data.optimized_code;
-    hljs.highlightElement(code);
-  } else {
-    document.getElementById('opt-code-toolbar').classList.add('hidden');
-  }
-}
-
-// ── Stage 5: Print Settings ───────────────────────────────────────────────────
+// ── Stage 4: Print Settings ───────────────────────────────────────────────────
 
 function renderPrintSettings(s) {
   const grid = document.getElementById('print-settings-grid');
@@ -432,7 +563,7 @@ function renderPrintSettings(s) {
   });
 }
 
-// ── Stage 6: BOM ─────────────────────────────────────────────────────────────
+// ── Stage 5: BOM ─────────────────────────────────────────────────────────────
 
 function renderBOM(data) {
   const tbody = document.getElementById('bom-tbody');
