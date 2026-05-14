@@ -386,17 +386,31 @@ async def serve_js():
 @app.post("/design")
 async def start_design(req: DesignRequest):
     design_id = str(uuid.uuid4())[:8]
+    timeout = req.timeout or TIMEOUT
+    model = req.model or MODEL
     DESIGNS[design_id] = {
         "status":      "running",
         "description": req.description,
         "iterations":  [],
+        "stage_prompts": {},
         "queue":       asyncio.Queue(),
     }
-    asyncio.create_task(_run_pipeline(
-        design_id, req.description,
-        req.model or MODEL,
-        req.timeout or TIMEOUT,
-    ))
+
+    async def run_stage_1():
+        d = DESIGNS[design_id]
+        queue = d["queue"]
+        try:
+            await queue.put({"stage": 1, "status": "running"})
+            brief = await asyncio.to_thread(stage_brief, req.description, model, timeout)
+            d["brief"] = brief
+            d["_current_prompt"] = req.description
+            await queue.put({"stage": 1, "status": "done", "data": brief})
+            await queue.put({"type": "complete"})
+        except Exception as exc:
+            await queue.put({"stage": 1, "status": "error", "data": {"message": str(exc)}})
+            await queue.put({"type": "error", "message": str(exc)})
+
+    asyncio.create_task(run_stage_1())
     return {"id": design_id}
 
 
@@ -453,53 +467,49 @@ async def retry_stage(design_id: str, stage_num: int, req: Optional[StageRetryRe
 
     async def run_single():
         queue = d["queue"]
-        sp = d.get("stage_prompts", {})
+        extra = d.get("stage_prompts", {}).get(stage_num, "")
         try:
-            # Run the retried stage and all subsequent stages
-            stages_to_run = range(stage_num, 6)  # stage_num through 5
-            for sn in stages_to_run:
-                await queue.put({"stage": sn, "status": "running"})
-                extra = sp.get(sn, "")
+            await queue.put({"stage": stage_num, "status": "running"})
 
-                if sn == 1:
-                    desc = d.get("_current_prompt") or d["description"]
-                    if extra:
-                        desc += f"\n\nAdditional guidance: {extra}"
-                    brief = await asyncio.to_thread(stage_brief, desc, model, timeout)
-                    d["brief"] = brief
-                    await queue.put({"stage": 1, "status": "done", "data": brief})
-                elif sn == 2:
-                    scad_code = await asyncio.to_thread(
-                        stage_generate_scad, d["brief"], model, timeout, extra
-                    )
-                    d["scad_code"] = scad_code
-                    await queue.put({"stage": 2, "status": "done", "data": {"scad_code": scad_code}})
-                elif sn == 3:
-                    render = await asyncio.to_thread(stage_render, d["scad_code"], design_id)
-                    d["render"] = render
-                    await queue.put({"stage": 3, "status": "done", "data": {
-                        "has_png": render["png_path"] is not None,
-                        "has_stl": render["stl_path"] is not None,
-                        "openscad_available": render["openscad_available"],
-                        "render_error": render.get("render_error"),
-                    }})
-                elif sn == 4:
-                    code = d.get("scad_code", "")
-                    settings = await asyncio.to_thread(
-                        stage_print_settings, d["brief"], code, model, timeout, extra
-                    )
-                    d["print_settings"] = settings
-                    await queue.put({"stage": 4, "status": "done", "data": settings})
-                elif sn == 5:
-                    bom = await asyncio.to_thread(
-                        stage_source_parts, d["brief"], model, timeout, extra
-                    )
-                    d["bom"] = bom
-                    await queue.put({"stage": 5, "status": "done", "data": bom})
+            if stage_num == 1:
+                desc = d.get("_current_prompt") or d["description"]
+                if extra:
+                    desc += f"\n\nAdditional guidance: {extra}"
+                brief = await asyncio.to_thread(stage_brief, desc, model, timeout)
+                d["brief"] = brief
+                await queue.put({"stage": 1, "status": "done", "data": brief})
+            elif stage_num == 2:
+                scad_code = await asyncio.to_thread(
+                    stage_generate_scad, d["brief"], model, timeout, extra
+                )
+                d["scad_code"] = scad_code
+                await queue.put({"stage": 2, "status": "done", "data": {"scad_code": scad_code}})
+            elif stage_num == 3:
+                render = await asyncio.to_thread(stage_render, d["scad_code"], design_id)
+                d["render"] = render
+                await queue.put({"stage": 3, "status": "done", "data": {
+                    "has_png": render["png_path"] is not None,
+                    "has_stl": render["stl_path"] is not None,
+                    "openscad_available": render["openscad_available"],
+                    "render_error": render.get("render_error"),
+                }})
+            elif stage_num == 4:
+                code = d.get("scad_code", "")
+                settings = await asyncio.to_thread(
+                    stage_print_settings, d["brief"], code, model, timeout, extra
+                )
+                d["print_settings"] = settings
+                await queue.put({"stage": 4, "status": "done", "data": settings})
+            elif stage_num == 5:
+                bom = await asyncio.to_thread(
+                    stage_source_parts, d["brief"], model, timeout, extra
+                )
+                d["bom"] = bom
+                await queue.put({"stage": 5, "status": "done", "data": bom})
 
             await queue.put({"type": "complete"})
         except Exception as exc:
-            await queue.put({"stage": sn, "status": "error", "data": {"message": str(exc)}})
+            await queue.put({"stage": stage_num, "status": "error", "data": {"message": str(exc)}})
             await queue.put({"type": "error", "message": str(exc)})
 
     asyncio.create_task(run_single())

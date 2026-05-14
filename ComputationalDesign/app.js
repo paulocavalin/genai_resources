@@ -63,7 +63,7 @@ async function startPipeline() {
 
   const btn = document.getElementById('design-btn');
   btn.disabled = true;
-  btn.textContent = '⬡ Designing…';
+  btn.textContent = '⬡ Processing…';
 
   resetPipeline();
   document.getElementById('pipeline').classList.remove('hidden');
@@ -76,7 +76,7 @@ async function startPipeline() {
   addToHistory(description);
 
   try {
-    // If we already have a design, this is a refinement
+    // If we already have a design, this is a refinement — re-run full pipeline
     if (_currentDesignId && _iterationCount > 0) {
       const res = await fetch(`${API}/design/${_currentDesignId}/refine`, {
         method:  'POST',
@@ -87,6 +87,7 @@ async function startPipeline() {
       await res.json();
       listenToStream(_currentDesignId);
     } else {
+      // First run: create design + run stage 1 only
       const res = await fetch(`${API}/design`, {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -100,7 +101,7 @@ async function startPipeline() {
     }
   } catch (err) {
     btn.disabled = false;
-    btn.innerHTML = '<span class="btn-icon">⬡</span> Run All';
+    btn.innerHTML = '<span class="btn-icon">⬡</span> Start';
     alert(`Could not connect to the server: ${err.message}`);
   }
 }
@@ -127,25 +128,20 @@ async function retryStage(stageNum) {
   const subpromptInput = card.querySelector('.stage-subprompt');
   const subprompt = subpromptInput ? subpromptInput.value.trim() : '';
 
-  // Reset this stage and all subsequent stages visually
-  for (let i = stageNum; i <= 5; i++) {
-    const c = document.getElementById(`stage-${i}`);
-    c.classList.remove('done', 'error');
-    c.querySelector('.stage-placeholder').classList.remove('hidden');
-    c.querySelector('.stage-placeholder').textContent = 'Waiting…';
-    c.querySelector('.stage-content').classList.add('hidden');
-    c.querySelector('.stage-retry-btn').disabled = true;
-    setBadge(i, 'pending', 'Pending');
-  }
-
+  // Reset only this stage visually
+  card.classList.remove('done', 'error');
   card.classList.add('running');
-  setBadge(stageNum, 'running', 'Running');
+  card.querySelector('.stage-placeholder').classList.remove('hidden');
   card.querySelector('.stage-placeholder').innerHTML = '<span class="spin">⬡</span> Processing…';
+  card.querySelector('.stage-content').classList.add('hidden');
+  card.querySelector('.stage-retry-btn').disabled = true;
+  setBadge(stageNum, 'running', 'Running');
   startStageTimer(stageNum);
 
-  const btn = document.getElementById('design-btn');
-  btn.disabled = true;
-  btn.textContent = '⬡ Designing…';
+  // Disable next stage button while this one runs
+  if (stageNum < 5) {
+    document.getElementById(`stage-${stageNum + 1}`).querySelector('.stage-retry-btn').disabled = true;
+  }
 
   try {
     const body = { timeout: getTimeout() };
@@ -164,8 +160,6 @@ async function retryStage(stageNum) {
     setBadge(stageNum, 'error', 'Error');
     card.querySelector('.stage-placeholder').textContent = `Error: ${err.message}`;
     card.querySelector('.stage-retry-btn').disabled = false;
-    btn.disabled = false;
-    btn.innerHTML = '<span class="btn-icon">⬡</span> Refine';
   }
 }
 
@@ -230,13 +224,20 @@ function listenToStream(designId) {
       es.close();
       const btn = document.getElementById('design-btn');
       btn.disabled = false;
-      btn.innerHTML = '<span class="btn-icon">⬡</span> Refine';
-      // Update textarea for refinement
-      const textarea = document.getElementById('description');
-      textarea.value = '';
-      textarea.placeholder = 'Describe how to refine the design (e.g. "make it taller", "add ventilation slots")…';
-      _iterationCount++;
-      updateIterationBadge();
+      // If all 5 stages are done, switch to Refine mode
+      const allDone = [1,2,3,4,5].every(i =>
+        document.getElementById(`stage-${i}`).classList.contains('done')
+      );
+      if (allDone) {
+        btn.innerHTML = '<span class="btn-icon">⬡</span> Refine';
+        const textarea = document.getElementById('description');
+        textarea.value = '';
+        textarea.placeholder = 'Describe how to refine the design (e.g. "make it taller", "add ventilation slots")…';
+        _iterationCount++;
+        updateIterationBadge();
+      } else {
+        btn.innerHTML = '<span class="btn-icon">⬡</span> Start';
+      }
       return;
     }
 
@@ -244,7 +245,7 @@ function listenToStream(designId) {
       es.close();
       const btn = document.getElementById('design-btn');
       btn.disabled = false;
-      btn.innerHTML = '<span class="btn-icon">⬡</span> Run All';
+      btn.innerHTML = '<span class="btn-icon">⬡</span> Start';
       showError(event.message);
       return;
     }
@@ -257,7 +258,7 @@ function listenToStream(designId) {
     es.close();
     const btn = document.getElementById('design-btn');
     btn.disabled = false;
-    btn.innerHTML = '<span class="btn-icon">⬡</span> Run All';
+    btn.innerHTML = '<span class="btn-icon">⬡</span> Start';
   };
 }
 
@@ -301,6 +302,12 @@ function updateStage(stage, status, data, designId) {
     card.querySelector('.stage-placeholder').classList.add('hidden');
     card.querySelector('.stage-content').classList.remove('hidden');
     retryBtn.disabled = false;
+
+    // Enable the next stage's ▶ button so user can advance
+    if (stage < 5) {
+      const nextCard = document.getElementById(`stage-${stage + 1}`);
+      nextCard.querySelector('.stage-retry-btn').disabled = false;
+    }
 
     switch (stage) {
       case 1: renderBrief(data);                    break;
