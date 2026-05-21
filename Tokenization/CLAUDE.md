@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-Visual demo of LLM inference mechanics: tokenization, token-by-token generation, and top-k probability sampling. FastAPI backend loads a local Hugging Face model (default: `google/gemma-4-E2B-it`); static HTML/CSS/JS frontend communicates with it directly.
+Visual demo of LLM inference mechanics: tokenization, token-by-token generation, and top-k probability sampling. FastAPI backend loads a local Hugging Face model (default: `google/gemma-3-1b-it`); static HTML/CSS/JS frontend communicates with it directly.
 
 ## Setup & Running
 
